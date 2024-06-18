@@ -29,7 +29,6 @@ jobs:
       #- run: flutter test
       - run: dart format --set-exit-if-changed lib
       - run: flutter analyze
-      - if: ${{ github.event_name == 'push' && github.ref_name == 'master' }}
-        uses: bluefireteam/flutter-gh-pages@v7
+      - uses: bluefireteam/flutter-gh-pages@v7
         with:
           webRenderer: canvaskit

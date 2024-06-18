@@ -1,16 +1,10 @@
 # renewable
 
-A new Flutter project.
+A toy game to experiment with replacing carbon power plants with wind and solar
 
-## Getting Started
+## todo
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+[ ] basic simulation of the power requirements of a city over 24 hours (based on population and randomly generated weather)
+[ ] basic simulation of wind and solar power genertion over 24 hours
+[ ] graphical chart showing over/under supply and cost of MWh produced
+[ ] bitcoin mining and load balancing?

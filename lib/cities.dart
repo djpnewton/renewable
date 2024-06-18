@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math';
 
 import 'package:csv/csv.dart';
@@ -14,10 +13,12 @@ class City {
     return (population / 1000000.0).round() * 1000;
   }
 
-  static List<City> parseCsv() {
+  factory City.empty() {
+    return City('', '', 0);
+  }
+
+  static List<City> parseCsv(String data) {
     final list = List<City>.empty(growable: true);
-    final file = File('../data/worldcities.csv');
-    final data = file.readAsStringSync();
     final res = const CsvToListConverter().convert(data);
     for (var index = 1; index < res.length; index++) {
       final cityRow = res[index];

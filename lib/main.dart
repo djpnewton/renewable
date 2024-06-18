@@ -1,6 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:logging/logging.dart';
+import 'package:fl_chart/fl_chart.dart';
+
+import 'cities.dart';
+import 'assets.dart';
+import 'sim.dart';
+import 'test.dart';
+
+final log = Logger('mainlogger');
 
 void main() {
+  Logger.root.level = Level.ALL; // defaults to Level.INFO
+  Logger.root.onRecord.listen((record) {
+    debugPrint('${record.level.name}: ${record.time}: ${record.message}');
+  });
+
   runApp(const MyApp());
 }
 
@@ -11,42 +25,18 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Renewable',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a blue toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(title: 'Renewable'),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
 
   final String title;
 
@@ -55,71 +45,251 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+  City _city = City.empty();
+  LineChartData _tempData = LineChartData();
+  LineChartData _sunData = LineChartData();
+  LineChartData _windData = LineChartData();
 
-  void _incrementCounter() {
+  @override
+  void initState() {
+    _generateCity();
+    super.initState();
+  }
+
+  void _generateCity() async {
+    final data = await getWorldCities();
+    final city = City.random(City.parseCsv(data));
+    setState(() => _city = city);
+  }
+
+  Widget _bottomTitleWidgets(double value, TitleMeta meta) {
+    const style = TextStyle(
+      fontSize: 10,
+      fontWeight: FontWeight.bold,
+    );
+    final text = niceTime(value.toInt());
+
+    return SideTitleWidget(
+      axisSide: meta.axisSide,
+      space: 4,
+      child: Text(text, style: style),
+    );
+  }
+
+  Widget leftTitleWidgets(double value, TitleMeta meta) {
+    const style = TextStyle(fontSize: 10);
+
+    return SideTitleWidget(
+      axisSide: meta.axisSide,
+      child: Text(
+        '\$ ${value + 0.5}',
+        style: style,
+      ),
+    );
+  }
+
+  void _sim() async {
+    var w24 = Weather24h();
+    printWeather24(w24);
+    List<FlSpot> temp = [];
+    List<FlSpot> sun = [];
+    List<FlSpot> wind = [];
+    for (var wp in w24.periods) {
+      printWeather(wp, _city);
+      temp.add(FlSpot(wp.hour.toDouble(), wp.temp.toDouble()));
+      sun.add(FlSpot(wp.hour.toDouble(), wp.sun.toDouble()));
+      wind.add(FlSpot(wp.hour.toDouble(), wp.wind.toDouble()));
+    }
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _tempData = LineChartData(
+        lineBarsData: [
+          LineChartBarData(
+              spots: temp,
+              isCurved: true,
+              barWidth: 2,
+              color: Colors.red,
+              dotData: const FlDotData(
+                show: false,
+              )),
+        ],
+        minY: 0,
+        maxY: 40,
+        borderData: FlBorderData(
+          show: false,
+        ),
+        titlesData: FlTitlesData(
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 1,
+              getTitlesWidget: _bottomTitleWidgets,
+            ),
+          ),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+        ),
+        gridData: const FlGridData(
+          show: true,
+          verticalInterval: 1,
+          horizontalInterval: 5,
+        ),
+      );
+      _sunData = LineChartData(
+        lineBarsData: [
+          LineChartBarData(
+              spots: sun,
+              isCurved: true,
+              barWidth: 2,
+              color: Colors.yellow,
+              dotData: const FlDotData(
+                show: false,
+              )),
+        ],
+        minY: 0,
+        maxY: 100,
+        borderData: FlBorderData(
+          show: false,
+        ),
+        titlesData: FlTitlesData(
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 1,
+              getTitlesWidget: _bottomTitleWidgets,
+            ),
+          ),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+        ),
+        gridData: const FlGridData(
+          show: true,
+          verticalInterval: 1,
+          horizontalInterval: 5,
+        ),
+      );
+      _windData = LineChartData(
+        lineBarsData: [
+          LineChartBarData(
+              spots: wind,
+              isCurved: true,
+              barWidth: 2,
+              color: Colors.blue,
+              dotData: const FlDotData(
+                show: false,
+              )),
+        ],
+        minY: 0,
+        maxY: 100,
+        borderData: FlBorderData(
+          show: false,
+        ),
+        titlesData: FlTitlesData(
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              interval: 1,
+              getTitlesWidget: _bottomTitleWidgets,
+            ),
+          ),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+        ),
+        gridData: const FlGridData(
+          show: true,
+          verticalInterval: 1,
+          horizontalInterval: 5,
+        ),
+      );
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
       ),
       body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
           mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
-            ),
+          children: [
             Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+              '${_city.name}, ${_city.country} (pop. ${_city.population})',
             ),
+            TextButton(onPressed: _sim, child: const Text('Run simulation')),
+            const Text(
+              'Temp (degrees C)',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            AspectRatio(
+                aspectRatio: 2.5,
+                child: Padding(
+                    padding: const EdgeInsets.only(
+                      left: 10,
+                      right: 18,
+                      top: 10,
+                      bottom: 4,
+                    ),
+                    child: LineChart(_tempData))),
+            const Text(
+              'Sun (%)',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            AspectRatio(
+                aspectRatio: 2.5,
+                child: Padding(
+                    padding: const EdgeInsets.only(
+                      left: 10,
+                      right: 18,
+                      top: 10,
+                      bottom: 4,
+                    ),
+                    child: LineChart(_sunData))),
+            const Text(
+              'Wind (km/h)',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            AspectRatio(
+                aspectRatio: 2.5,
+                child: Padding(
+                    padding: const EdgeInsets.only(
+                      left: 10,
+                      right: 18,
+                      top: 10,
+                      bottom: 4,
+                    ),
+                    child: LineChart(_windData))),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }

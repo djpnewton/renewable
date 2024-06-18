@@ -1,5 +1,15 @@
 import 'dart:math';
 
+import 'cities.dart';
+
+String niceTime(int hour) {
+  assert(hour >= 0 && hour <= 23);
+  if (hour == 0) return '12 am';
+  if (hour <= 11) return '$hour am';
+  if (hour == 12) return '12 pm';
+  return '${hour - 12} pm';
+}
+
 class WeatherPeriod {
   // one hour of weather
   int hour; // hour of day 0 -> 23
@@ -8,25 +18,31 @@ class WeatherPeriod {
   int wind; // km/h
   WeatherPeriod(this.hour, this.temp, this.sun, this.wind);
 
-  String niceTime() {
-    assert(hour >= 0 && hour <= 23);
-    if (hour == 0) return '12 am';
-    if (hour <= 11) return '$hour am';
-    if (hour == 12) return '12 pm';
-    return '${hour - 12} pm';
+  String time() {
+    return niceTime(hour);
   }
 
-  factory WeatherPeriod.sim(int hour, int tempHigh, int tempLow) {
+  int energyDemand(City c) {
+    if (temp > 10 && temp < 30) return c.baseEnergyRequirement();
+    return (c.baseEnergyRequirement() * 1.2).round();
+  }
+
+  factory WeatherPeriod.sim(
+      int hour, int tempHigh, int tempLow, int sunAvg, int windAvg) {
     var rnd = Random();
     var temp = hour / 12.0 * (tempHigh - tempLow) + tempLow;
     if (hour > 12) {
       temp = tempHigh - ((hour - 12) / 12.0 * (tempHigh - tempLow));
     }
-    var sun = rnd.nextInt(101); // sun percentage
+    var sun = sunAvg - 20 + rnd.nextInt(40);
+    if (sun < 0) sun = 0;
+    if (sun > 100) sun = 100;
     if (hour < 7 || hour > 18) {
       sun = 0;
     }
-    var wind = rnd.nextInt(101); // wind speed >= 0, <= 100
+    var wind = windAvg - 20 + rnd.nextInt(40);
+    if (wind < 0) wind = 0;
+    if (wind > 100) wind = 100;
     return WeatherPeriod(hour, temp.round(), sun, wind);
   }
 }
@@ -34,18 +50,20 @@ class WeatherPeriod {
 class Weather24h {
   late int tempHigh;
   late int tempLow;
-  //late int sunAvg; //TODO
-  //late int windAge; //TODO
+  late int sunAvg;
+  late int windAvg;
   late List<WeatherPeriod> periods;
 
   Weather24h() {
     var rnd = Random();
-    tempHigh = rnd.nextInt(30) + 10;
-    tempLow = tempHigh - 10;
+    tempHigh = rnd.nextInt(30) + 10; // temp high degrees centigrade
+    tempLow = tempHigh - 10; // temp low degrees centigrade
+    sunAvg = rnd.nextInt(70) + 30; // sun percentage average
+    windAvg = rnd.nextInt(101); // wind speed average >= 0, <= 100
 
     periods = [];
     for (var i = 0; i <= 23; i++) {
-      periods.add(WeatherPeriod.sim(i, tempHigh, tempLow));
+      periods.add(WeatherPeriod.sim(i, tempHigh, tempLow, sunAvg, windAvg));
     }
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:renewable/config.dart';
 
 import 'cities.dart';
 import 'assets.dart';
@@ -14,6 +15,9 @@ void main() {
   Logger.root.onRecord.listen((record) {
     debugPrint('${record.level.name}: ${record.time}: ${record.message}');
   });
+
+  log.info('build GIT SHA: $gitSha');
+  log.info('build date: $buildDate');
 
   runApp(const MyApp());
 }
@@ -63,6 +67,8 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _bottomTitleWidgets(double value, TitleMeta meta) {
+    if (value.toInt() % 2 != 0) return const SizedBox();
+
     const style = TextStyle(
       fontSize: 10,
       fontWeight: FontWeight.bold,
@@ -73,18 +79,6 @@ class _MyHomePageState extends State<MyHomePage> {
       axisSide: meta.axisSide,
       space: 4,
       child: Text(text, style: style),
-    );
-  }
-
-  Widget leftTitleWidgets(double value, TitleMeta meta) {
-    const style = TextStyle(fontSize: 10);
-
-    return SideTitleWidget(
-      axisSide: meta.axisSide,
-      child: Text(
-        '\$ ${value + 0.5}',
-        style: style,
-      ),
     );
   }
 

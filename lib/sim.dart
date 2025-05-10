@@ -89,6 +89,7 @@ class GenerationPeriod {
 }
 
 abstract class Generator {
+  int get megawattMax;
   String type();
   GenerationPeriod generate(WeatherPeriod wp, int percentRequired);
   GenerationPeriod total();
@@ -96,6 +97,7 @@ abstract class Generator {
 
 class GeneratorCarbon implements Generator {
   int operationCost;
+  @override
   int megawattMax;
   GenerationPeriod _total = GenerationPeriod.zero();
 
@@ -122,6 +124,7 @@ class GeneratorCarbon implements Generator {
 
 class GeneratorSolar implements Generator {
   int operationCost;
+  @override
   int megawattMax; // generation capacity at 100% sun
   GenerationPeriod _total = GenerationPeriod.zero();
 
@@ -148,6 +151,7 @@ class GeneratorSolar implements Generator {
 
 class GeneratorWind implements Generator {
   int operationCost;
+  @override
   int megawattMax; // generation capacity at max windspeed
   int maxWind; // maximum windspeed
   int minWind; // minimum windspeed

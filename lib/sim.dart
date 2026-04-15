@@ -23,8 +23,26 @@ class WeatherPeriod {
   }
 
   int energyDemand(City c) {
-    if (temp > 10 && temp < 30) return c.baseEnergyRequirement();
-    return (c.baseEnergyRequirement() * 1.2).round();
+    // Time-of-day demand profile
+    final double timeMultiplier;
+    if (hour <= 5) {
+      timeMultiplier = 0.6; // night — low demand
+    } else if (hour <= 7) {
+      timeMultiplier = 0.75; // early morning ramp
+    } else if (hour <= 10) {
+      timeMultiplier = 1.0; // morning peak
+    } else if (hour <= 14) {
+      timeMultiplier = 0.85; // midday lull
+    } else if (hour <= 17) {
+      timeMultiplier = 0.9; // afternoon
+    } else if (hour <= 21) {
+      timeMultiplier = 1.1; // evening peak
+    } else {
+      timeMultiplier = 0.7; // late night
+    }
+    final double tempMultiplier = (temp > 10 && temp < 30) ? 1.0 : 1.2;
+    return (c.baseEnergyRequirement() * timeMultiplier * tempMultiplier)
+        .round();
   }
 
   factory WeatherPeriod.sim(
@@ -93,6 +111,7 @@ abstract class Generator {
   String type();
   GenerationPeriod generate(WeatherPeriod wp, int percentRequired);
   GenerationPeriod total();
+  void reset();
 }
 
 class GeneratorCarbon implements Generator {
@@ -110,16 +129,18 @@ class GeneratorCarbon implements Generator {
 
   @override
   GenerationPeriod generate(WeatherPeriod wp, int percentRequired) {
-    var gp = GenerationPeriod(operationCost, megawattMax * 1.0,
-        megawattMax * percentRequired / 100.0);
+    var generated = megawattMax * percentRequired / 100.0;
+    var gp = GenerationPeriod(
+        (operationCost * percentRequired / 100).round(), generated, generated);
     _total = _total.add(gp);
     return gp;
   }
 
   @override
-  GenerationPeriod total() {
-    return _total;
-  }
+  GenerationPeriod total() => _total;
+
+  @override
+  void reset() => _total = GenerationPeriod.zero();
 }
 
 class GeneratorSolar implements Generator {
@@ -144,9 +165,10 @@ class GeneratorSolar implements Generator {
   }
 
   @override
-  GenerationPeriod total() {
-    return _total;
-  }
+  GenerationPeriod total() => _total;
+
+  @override
+  void reset() => _total = GenerationPeriod.zero();
 }
 
 class GeneratorWind implements Generator {
@@ -180,15 +202,62 @@ class GeneratorWind implements Generator {
   }
 
   @override
-  GenerationPeriod total() {
-    return _total;
-  }
+  GenerationPeriod total() => _total;
+
+  @override
+  void reset() => _total = GenerationPeriod.zero();
 }
 
-GenerationPeriod generate(WeatherPeriod wp, List<Generator> generators) {
-  var gp = GenerationPeriod.zero();
-  for (var g in generators) {
-    gp = gp.add(g.generate(wp, 100 /*TODO*/));
+class Battery {
+  double capacityMWh;
+  double maxPowerMW;
+  double chargeMWh;
+
+  Battery(this.capacityMWh, this.maxPowerMW) : chargeMWh = 0;
+
+  /// Returns MWh actually discharged (positive value).
+  double discharge(double neededMWh) {
+    var available = [neededMWh, maxPowerMW, chargeMWh].reduce(min);
+    if (available < 0) available = 0;
+    chargeMWh -= available;
+    return available;
   }
-  return gp;
+
+  /// Returns MWh actually charged (positive value).
+  double charge(double availableMWh) {
+    var canCharge =
+        [availableMWh, maxPowerMW, capacityMWh - chargeMWh].reduce(min);
+    if (canCharge < 0) canCharge = 0;
+    chargeMWh += canCharge;
+    return canCharge;
+  }
+
+  void reset() => chargeMWh = 0;
+}
+
+class SimSummary {
+  final double totalDemandMWh;
+  final double totalProducedMWh;
+  final double shortfallMWh; // sum of hours where produced < demand
+  final double surplusMWh; // sum of hours where produced > demand
+  final double renewableMWh; // solar + wind
+  final double carbonMWh;
+  final double batteryMWh; // net discharged from battery
+  final int totalCost;
+
+  SimSummary({
+    required this.totalDemandMWh,
+    required this.totalProducedMWh,
+    required this.shortfallMWh,
+    required this.surplusMWh,
+    required this.renewableMWh,
+    required this.carbonMWh,
+    required this.batteryMWh,
+    required this.totalCost,
+  });
+
+  double get renewablePercent =>
+      totalProducedMWh > 0 ? renewableMWh / totalProducedMWh * 100 : 0;
+  double get carbonPercent =>
+      totalProducedMWh > 0 ? carbonMWh / totalProducedMWh * 100 : 0;
 }

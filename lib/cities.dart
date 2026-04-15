@@ -9,8 +9,8 @@ class City {
   City(this.name, this.country, this.population);
 
   int baseEnergyRequirement() {
-    // megawatts
-    return (population / 1000000.0).round() * 1000;
+    // megawatts - approximately 1 MW per 1000 people, minimum 100 MW
+    return max(100, population ~/ 1000);
   }
 
   factory City.empty() {

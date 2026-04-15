@@ -109,7 +109,7 @@ class GenerationPeriod {
 abstract class Generator {
   int get megawattMax;
   String type();
-  GenerationPeriod generate(WeatherPeriod wp, int percentRequired);
+  GenerationPeriod generate(WeatherPeriod wp, double percentRequired);
   GenerationPeriod total();
   void reset();
 }
@@ -128,7 +128,7 @@ class GeneratorCarbon implements Generator {
   }
 
   @override
-  GenerationPeriod generate(WeatherPeriod wp, int percentRequired) {
+  GenerationPeriod generate(WeatherPeriod wp, double percentRequired) {
     var generated = megawattMax * percentRequired / 100.0;
     var gp = GenerationPeriod(
         (operationCost * percentRequired / 100).round(), generated, generated);
@@ -157,7 +157,7 @@ class GeneratorSolar implements Generator {
   }
 
   @override
-  GenerationPeriod generate(WeatherPeriod wp, int percentRequired) {
+  GenerationPeriod generate(WeatherPeriod wp, double percentRequired) {
     var gp = GenerationPeriod(operationCost, megawattMax * wp.sun / 100,
         megawattMax * percentRequired / 100.0);
     _total = _total.add(gp);
@@ -188,7 +188,7 @@ class GeneratorWind implements Generator {
   }
 
   @override
-  GenerationPeriod generate(WeatherPeriod wp, int percentRequired) {
+  GenerationPeriod generate(WeatherPeriod wp, double percentRequired) {
     assert(minWind >= 0);
     assert(maxWind > minWind);
     var required = megawattMax * percentRequired / 100.0;
@@ -262,4 +262,6 @@ class SimSummary {
       totalProducedMWh > 0 ? renewableMWh / totalProducedMWh * 100 : 0;
   double get carbonPercent =>
       totalProducedMWh > 0 ? carbonMWh / totalProducedMWh * 100 : 0;
+  double get batteryPercent =>
+      totalProducedMWh > 0 ? batteryMWh / totalProducedMWh * 100 : 0;
 }

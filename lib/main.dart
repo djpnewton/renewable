@@ -53,8 +53,9 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   var _city = City.empty();
   var _generators = <Generator>[];
-  var _battery = Battery(0, 0);
+  var _batteries = <Battery>[];
   SimSummary? _summary;
+  Weather24h? _lastWeather;
   var _tempData = LineChartData();
   var _sunData = LineChartData();
   var _windData = LineChartData();
@@ -73,25 +74,17 @@ class _MyHomePageState extends State<MyHomePage> {
     final city = City.random(City.parseCsv(data));
     var megawattsRequired = city.baseEnergyRequirement();
     final newGenerators = <Generator>[];
-    final rng = Random();
-    // generate generators until megawattsRequired is met
+    // start with all carbon generators
     while (megawattsRequired > 0) {
-      var gen = switch (rng.nextInt(3)) {
-        0 => GeneratorCarbon(1000, 1000),
-        1 => GeneratorWind(250, 1000, 60, 15),
-        2 => GeneratorSolar(250, 1000),
-        _ => throw Exception('Invalid generator type'),
-      };
+      var gen = GeneratorCarbon(1000, 1000);
       newGenerators.add(gen);
       megawattsRequired -= gen.megawattMax;
     }
     // battery: 2 hours of base demand as storage, 50% of base demand as max power
-    final newBattery = Battery(
-        city.baseEnergyRequirement() * 2.0, city.baseEnergyRequirement() * 0.5);
     setState(() {
       _city = city;
       _generators = newGenerators;
-      _battery = newBattery;
+      _batteries = [];
       _summary = null;
       _tempData = LineChartData();
       _sunData = LineChartData();
@@ -144,12 +137,19 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void _sim() async {
-    var w24 = Weather24h();
+    final w24 = Weather24h();
+    _lastWeather = w24;
+    _runSim(w24);
+  }
+
+  void _runSim(Weather24h w24) {
     printWeather24(w24);
     for (var gen in _generators) {
       gen.reset();
     }
-    _battery.reset();
+    for (var b in _batteries) {
+      b.reset();
+    }
     List<FlSpot> temp = [];
     List<FlSpot> sun = [];
     List<FlSpot> wind = [];
@@ -194,10 +194,15 @@ class _MyHomePageState extends State<MyHomePage> {
       var batteryContribution = 0.0;
       var batteryAccumHour = 0.0;
       if (gap > 0) {
-        batteryContribution = _battery.discharge(gap);
+        for (final b in _batteries) {
+          final got = b.discharge(gap - batteryContribution);
+          batteryContribution += got;
+        }
         gap -= batteryContribution;
       } else {
-        batteryAccumHour = _battery.charge(-gap);
+        for (final b in _batteries) {
+          batteryAccumHour += b.charge((-gap) - batteryAccumHour);
+        }
       }
 
       // 3. Carbon fills any remaining gap (dispatchable peaker)
@@ -207,8 +212,7 @@ class _MyHomePageState extends State<MyHomePage> {
       var carbonOutput = 0.0;
       var carbonCost = 0;
       if (totalCarbonCapacity > 0 && gap > 0) {
-        final carbonPercent =
-            min(100, (gap / totalCarbonCapacity * 100).round());
+        final carbonPercent = min(100.0, gap / totalCarbonCapacity * 100);
         for (var gen in carbonGens) {
           var gp = gen.generate(wp, carbonPercent);
           carbonOutput += gp.megawattHoursGenerated;
@@ -225,17 +229,19 @@ class _MyHomePageState extends State<MyHomePage> {
       final totalCostHour = freeCost + carbonCost;
       produced.add(FlSpot(wp.hour.toDouble(), totalProducedHour));
       cost.add(FlSpot(wp.hour.toDouble(), totalCostHour.toDouble()));
-      batteryCharge.add(FlSpot(wp.hour.toDouble(), _battery.chargeMWh));
+      batteryCharge.add(FlSpot(
+          wp.hour.toDouble(), _batteries.fold(0.0, (s, b) => s + b.chargeMWh)));
       batteryAccum.add(FlSpot(wp.hour.toDouble(), batteryAccumHour));
       batteryDischarge.add(FlSpot(wp.hour.toDouble(), batteryContribution));
 
       totalDemand += demandMW;
       totalProduced += totalProducedHour;
-      if (totalProducedHour < demandMW) {
-        totalShortfall += demandMW - totalProducedHour;
+      final diff = totalProducedHour - demandMW;
+      if (diff < -0.001) {
+        totalShortfall += -diff;
       }
-      if (totalProducedHour > demandMW) {
-        totalSurplus += totalProducedHour - demandMW;
+      if (diff > 0.001) {
+        totalSurplus += diff;
       }
       totalRenewable += freeOutput;
       totalCarbon += carbonOutput;
@@ -311,6 +317,13 @@ class _MyHomePageState extends State<MyHomePage> {
         gridData: const FlGridData(
             show: true, verticalInterval: 1, horizontalInterval: 10),
       );
+      final windGens = _generators.whereType<GeneratorWind>().toList();
+      final windCutoff = windGens.isNotEmpty
+          ? windGens.map((g) => g.maxWind).reduce(max).toDouble()
+          : null;
+      final windMin = windGens.isNotEmpty
+          ? windGens.map((g) => g.minWind).reduce(min).toDouble()
+          : null;
       _windData = LineChartData(
         lineBarsData: [
           LineChartBarData(
@@ -320,6 +333,40 @@ class _MyHomePageState extends State<MyHomePage> {
               color: Colors.blue,
               dotData: const FlDotData(show: false)),
         ],
+        extraLinesData: windCutoff != null
+            ? ExtraLinesData(horizontalLines: [
+                HorizontalLine(
+                  y: windCutoff,
+                  color: Colors.red.withValues(alpha: 0.7),
+                  strokeWidth: 1,
+                  dashArray: [6, 4],
+                  label: HorizontalLineLabel(
+                    show: true,
+                    alignment: Alignment.topRight,
+                    labelResolver: (_) => ' too windy ',
+                    style: const TextStyle(
+                        fontSize: 9,
+                        color: Colors.red,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ),
+                HorizontalLine(
+                  y: windMin!,
+                  color: Colors.orange.withValues(alpha: 0.7),
+                  strokeWidth: 1,
+                  dashArray: [6, 4],
+                  label: HorizontalLineLabel(
+                    show: true,
+                    alignment: Alignment.topRight,
+                    labelResolver: (_) => ' too calm ',
+                    style: const TextStyle(
+                        fontSize: 9,
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ])
+            : const ExtraLinesData(),
         minY: 0,
         maxY: 100,
         borderData: FlBorderData(show: false),
@@ -493,14 +540,20 @@ class _MyHomePageState extends State<MyHomePage> {
                   ? '${s.shortfallMWh.toStringAsFixed(0)} MWh'
                   : 'none',
               valueColor: shortfallColor),
-          _summaryRow('Surplus', '${s.surplusMWh.toStringAsFixed(0)} MWh'),
+          _summaryRow(
+              'Surplus',
+              s.surplusMWh > 0
+                  ? '${s.surplusMWh.toStringAsFixed(0)} MWh'
+                  : 'none'),
           const Divider(),
           _summaryRow(
               'Renewable (solar/wind)',
               '${s.renewableMWh.toStringAsFixed(0)} MWh'
                   '  (${s.renewablePercent.toStringAsFixed(1)}%)'),
           _summaryRow(
-              'Battery (discharged)', '${s.batteryMWh.toStringAsFixed(0)} MWh'),
+              'Battery (discharged)',
+              '${s.batteryMWh.toStringAsFixed(0)} MWh'
+                  '  (${s.batteryPercent.toStringAsFixed(1)}%)'),
           _summaryRow(
               'Carbon',
               '${s.carbonMWh.toStringAsFixed(0)} MWh'
@@ -517,14 +570,71 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Widget _buildBatteryCard() {
+  void _convertGenerator(int index, String toType) {
+    final existing = _generators[index];
+    final replacement = switch (toType) {
+      'solar' => GeneratorSolar(250, existing.megawattMax) as Generator,
+      'wind' => GeneratorWind(250, existing.megawattMax, 60, 15),
+      'carbon' => GeneratorCarbon(1000, existing.megawattMax),
+      _ => throw Exception('Unknown type'),
+    };
+    _generators[index] = replacement;
+    if (_lastWeather != null) {
+      _runSim(_lastWeather!);
+    } else {
+      setState(() => _summary = null);
+    }
+  }
+
+  void _removeGenerator(int index) {
+    if (_generators.length <= 1) return;
+    _generators.removeAt(index);
+    if (_lastWeather != null) {
+      _runSim(_lastWeather!);
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _addGenerator(int mw) {
+    _generators.add(GeneratorCarbon(mw, mw));
+    if (_lastWeather != null) {
+      _runSim(_lastWeather!);
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _addBattery(int mwh) {
+    _batteries.add(Battery(mwh.toDouble(), (mwh / 2).toDouble()));
+    if (_lastWeather != null) {
+      _runSim(_lastWeather!);
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _removeBattery(int index) {
+    _batteries.removeAt(index);
+    if (_lastWeather != null) {
+      _runSim(_lastWeather!);
+    } else {
+      setState(() {});
+    }
+  }
+
+  Widget _buildBatteryCard(int index, Battery b) {
     const color = Colors.orange;
-    final maxMWh = _battery.capacityMWh;
-    final chargedMWh = _summary?.batteryChargedMWh ?? 0.0;
-    final dischargedMWh = _summary?.batteryMWh ?? 0.0;
-    final chargeUtil = maxMWh > 0 ? (chargedMWh / maxMWh).clamp(0.0, 1.0) : 0.0;
-    final dischargeUtil =
-        maxMWh > 0 ? (dischargedMWh / maxMWh).clamp(0.0, 1.0) : 0.0;
+    final count = _batteries.length;
+    final chargedMWh =
+        count > 0 ? (_summary?.batteryChargedMWh ?? 0.0) / count : 0.0;
+    final dischargedMWh =
+        count > 0 ? (_summary?.batteryMWh ?? 0.0) / count : 0.0;
+    final chargeUtil =
+        b.capacityMWh > 0 ? (chargedMWh / b.capacityMWh).clamp(0.0, 1.0) : 0.0;
+    final dischargeUtil = b.capacityMWh > 0
+        ? (dischargedMWh / b.capacityMWh).clamp(0.0, 1.0)
+        : 0.0;
     return Container(
       width: 240,
       margin: const EdgeInsets.symmetric(vertical: 3),
@@ -547,12 +657,19 @@ class _MyHomePageState extends State<MyHomePage> {
                   style: TextStyle(fontWeight: FontWeight.bold, color: color),
                 ),
                 const Spacer(),
-                Text('${_battery.capacityMWh.toStringAsFixed(0)} MWh',
+                Text('${b.capacityMWh.toStringAsFixed(0)} MWh',
                     style: const TextStyle(fontSize: 12)),
+                const SizedBox(width: 4),
+                InkWell(
+                  onTap: () => _removeBattery(index),
+                  borderRadius: BorderRadius.circular(10),
+                  child:
+                      const Icon(Icons.close, size: 14, color: Colors.black38),
+                ),
               ],
             ),
             Text(
-              'max ${_battery.maxPowerMW.toStringAsFixed(0)} MW',
+              'max ${b.maxPowerMW.toStringAsFixed(0)} MW',
               style: const TextStyle(fontSize: 10, color: Colors.black45),
             ),
             if (_summary != null) ...[
@@ -621,7 +738,7 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Widget _buildGeneratorCard(Generator g) {
+  Widget _buildGeneratorCard(int index, Generator g) {
     final color = switch (g.type()) {
       'solar' => Colors.amber,
       'wind' => Colors.lightBlue,
@@ -662,8 +779,30 @@ class _MyHomePageState extends State<MyHomePage> {
                 const Spacer(),
                 Text('${g.megawattMax} MW',
                     style: const TextStyle(fontSize: 12)),
+                if (_generators.length > 1) ...[
+                  const SizedBox(width: 4),
+                  InkWell(
+                    onTap: () => _removeGenerator(index),
+                    borderRadius: BorderRadius.circular(10),
+                    child: const Icon(Icons.close,
+                        size: 14, color: Colors.black38),
+                  ),
+                ],
               ],
             ),
+            if (g is GeneratorCarbon) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  _convertButton(index, 'solar', Colors.amber, Icons.wb_sunny),
+                  const SizedBox(width: 6),
+                  _convertButton(index, 'wind', Colors.lightBlue, Icons.air),
+                ],
+              ),
+            ] else ...[
+              const SizedBox(height: 4),
+              _convertButton(index, 'carbon', Colors.blueGrey, Icons.factory),
+            ],
             if (_summary != null) ...[
               const SizedBox(height: 4),
               ClipRRect(
@@ -688,6 +827,32 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  Widget _convertButton(int index, String toType, Color color, IconData icon) {
+    return InkWell(
+      onTap: () => _convertGenerator(index, toType),
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          border: Border.all(color: color),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 3),
+            Text(
+              '→ ${toType[0].toUpperCase()}${toType.substring(1)}',
+              style: TextStyle(
+                  fontSize: 10, color: color, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -706,7 +871,7 @@ class _MyHomePageState extends State<MyHomePage> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 TextButton(
-                    onPressed: _sim, child: const Text('Run simulation')),
+                    onPressed: _sim, child: const Text('Create simulation')),
                 TextButton(
                     onPressed: _generateCity,
                     child: const Text('Regenerate city')),
@@ -746,7 +911,32 @@ class _MyHomePageState extends State<MyHomePage> {
                             ),
                           ),
                         ),
-                        ..._generators.map(_buildGeneratorCard),
+                        ..._generators.indexed
+                            .map((e) => _buildGeneratorCard(e.$1, e.$2)),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          width: 240,
+                          child: Row(
+                            children: [
+                              for (final mw in [250, 500, 1000])
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 4),
+                                    child: OutlinedButton(
+                                      onPressed: () => _addGenerator(mw),
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 4),
+                                        textStyle:
+                                            const TextStyle(fontSize: 11),
+                                      ),
+                                      child: Text('+${mw}MW'),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: 12),
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 4),
@@ -759,7 +949,32 @@ class _MyHomePageState extends State<MyHomePage> {
                             ),
                           ),
                         ),
-                        _buildBatteryCard(),
+                        ..._batteries.indexed
+                            .map((e) => _buildBatteryCard(e.$1, e.$2)),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          width: 240,
+                          child: Row(
+                            children: [
+                              for (final mwh in [250, 500, 1000])
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 4),
+                                    child: OutlinedButton(
+                                      onPressed: () => _addBattery(mwh),
+                                      style: OutlinedButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 4),
+                                        textStyle:
+                                            const TextStyle(fontSize: 11),
+                                      ),
+                                      child: Text('+${mwh}MWh'),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                       ])
                 ],
               ),

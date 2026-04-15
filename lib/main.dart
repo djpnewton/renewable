@@ -521,64 +521,70 @@ class _MyHomePageState extends State<MyHomePage> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
       ),
-      body: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            '${_city.name}, ${_city.country} (pop. ${_city.population})',
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TextButton(onPressed: _sim, child: const Text('Run simulation')),
-              TextButton(
-                  onPressed: _generateCity,
-                  child: const Text('Regenerate city')),
-            ],
-          ),
-          if (_summary != null) _buildSummary(_summary!),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Column(mainAxisAlignment: MainAxisAlignment.start, children: [
-                _chart('Temp (degrees C)', _tempData),
-                _chart('Sun (%)', _sunData),
-                _chart('Wind (km/h)', _windData),
-              ]),
-              Column(mainAxisAlignment: MainAxisAlignment.start, children: [
-                _chart('Energy: Demand (green) vs Produced (red) (MW)',
-                    _energyData),
-                _chart(
-                    'Battery: Storage (orange) / Charge (green) / Discharge (red) (MWh)',
-                    _batteryData),
-                _chart('Operational Cost (\$)', _costData),
-              ]),
-              Column(mainAxisAlignment: MainAxisAlignment.start, children: [
-                Text(
-                  'Generators (${_generators.length})',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                Text(
-                  'Battery: ${_battery.capacityMWh.toStringAsFixed(0)} MWh capacity'
-                  ' / ${_battery.maxPowerMW.toStringAsFixed(0)} MW max power',
-                  style: const TextStyle(fontStyle: FontStyle.italic),
-                ),
-                const SizedBox(height: 4),
-                ..._generators
-                    .map(
-                      (g) =>
-                          Text('Type: ${g.type()}, Max: ${g.megawattMax} MW'),
-                    )
-                    .toList(),
-              ])
-            ],
-          ),
-        ],
+      body: SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              '${_city.name}, ${_city.country} (pop. ${_city.population})',
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TextButton(
+                    onPressed: _sim, child: const Text('Run simulation')),
+                TextButton(
+                    onPressed: _generateCity,
+                    child: const Text('Regenerate city')),
+              ],
+            ),
+            if (_summary != null) _buildSummary(_summary!),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Column(mainAxisAlignment: MainAxisAlignment.start, children: [
+                    _chart('Temp (degrees C)', _tempData),
+                    _chart('Sun (%)', _sunData),
+                    _chart('Wind (km/h)', _windData),
+                  ]),
+                  Column(mainAxisAlignment: MainAxisAlignment.start, children: [
+                    _chart('Energy: Demand (green) vs Produced (red) (MW)',
+                        _energyData),
+                    _chart(
+                        'Battery: Storage (orange) / Charge (green) / Discharge (red) (MWh)',
+                        _batteryData),
+                    _chart('Operational Cost (\$)', _costData),
+                  ]),
+                  Column(mainAxisAlignment: MainAxisAlignment.start, children: [
+                    Text(
+                      'Generators (${_generators.length})',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    Text(
+                      'Battery: ${_battery.capacityMWh.toStringAsFixed(0)} MWh capacity'
+                      ' / ${_battery.maxPowerMW.toStringAsFixed(0)} MW max power',
+                      style: const TextStyle(fontStyle: FontStyle.italic),
+                    ),
+                    const SizedBox(height: 4),
+                    ..._generators
+                        .map(
+                          (g) => Text(
+                              'Type: ${g.type()}, Max: ${g.megawattMax} MW'),
+                        )
+                        .toList(),
+                  ])
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

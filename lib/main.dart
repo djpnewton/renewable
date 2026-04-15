@@ -166,6 +166,7 @@ class _MyHomePageState extends State<MyHomePage> {
     var totalRenewable = 0.0;
     var totalCarbon = 0.0;
     var totalBattery = 0.0;
+    var totalBatteryCharged = 0.0;
     var totalCostSum = 0;
     for (var wp in w24.periods) {
       printWeather(wp, _city);
@@ -239,6 +240,7 @@ class _MyHomePageState extends State<MyHomePage> {
       totalRenewable += freeOutput;
       totalCarbon += carbonOutput;
       totalBattery += batteryContribution;
+      totalBatteryCharged += batteryAccumHour;
       totalCostSum += totalCostHour;
     }
     setState(() {
@@ -250,6 +252,7 @@ class _MyHomePageState extends State<MyHomePage> {
         renewableMWh: totalRenewable,
         carbonMWh: totalCarbon,
         batteryMWh: totalBattery,
+        batteryChargedMWh: totalBatteryCharged,
         totalCost: totalCostSum,
       );
       _tempData = LineChartData(
@@ -514,6 +517,177 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  Widget _buildBatteryCard() {
+    const color = Colors.orange;
+    final maxMWh = _battery.capacityMWh;
+    final chargedMWh = _summary?.batteryChargedMWh ?? 0.0;
+    final dischargedMWh = _summary?.batteryMWh ?? 0.0;
+    final chargeUtil = maxMWh > 0 ? (chargedMWh / maxMWh).clamp(0.0, 1.0) : 0.0;
+    final dischargeUtil =
+        maxMWh > 0 ? (dischargedMWh / maxMWh).clamp(0.0, 1.0) : 0.0;
+    return Container(
+      width: 240,
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      decoration: BoxDecoration(
+        border: const Border(left: BorderSide(color: color, width: 4)),
+        color: color.withValues(alpha: 0.08),
+        borderRadius: const BorderRadius.horizontal(right: Radius.circular(6)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.battery_charging_full, size: 16, color: color),
+                const SizedBox(width: 6),
+                const Text(
+                  'Battery',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: color),
+                ),
+                const Spacer(),
+                Text('${_battery.capacityMWh.toStringAsFixed(0)} MWh',
+                    style: const TextStyle(fontSize: 12)),
+              ],
+            ),
+            Text(
+              'max ${_battery.maxPowerMW.toStringAsFixed(0)} MW',
+              style: const TextStyle(fontSize: 10, color: Colors.black45),
+            ),
+            if (_summary != null) ...[
+              const SizedBox(height: 4),
+              // Charge bar (green)
+              Row(
+                children: [
+                  const SizedBox(
+                      width: 68,
+                      child: Text('Charged',
+                          style:
+                              TextStyle(fontSize: 10, color: Colors.black54))),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: chargeUtil,
+                        minHeight: 5,
+                        backgroundColor: Colors.grey.shade200,
+                        valueColor:
+                            const AlwaysStoppedAnimation<Color>(Colors.green),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 1),
+              Text(
+                '${chargedMWh.toStringAsFixed(0)} MWh  '
+                '(${(chargeUtil * 100).toStringAsFixed(0)}% of cap)',
+                style: const TextStyle(fontSize: 10, color: Colors.black54),
+              ),
+              const SizedBox(height: 4),
+              // Discharge bar (red)
+              Row(
+                children: [
+                  const SizedBox(
+                      width: 68,
+                      child: Text('Discharged',
+                          style:
+                              TextStyle(fontSize: 10, color: Colors.black54))),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: dischargeUtil,
+                        minHeight: 5,
+                        backgroundColor: Colors.grey.shade200,
+                        valueColor:
+                            const AlwaysStoppedAnimation<Color>(Colors.red),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 1),
+              Text(
+                '${dischargedMWh.toStringAsFixed(0)} MWh  '
+                '(${(dischargeUtil * 100).toStringAsFixed(0)}% of cap)',
+                style: const TextStyle(fontSize: 10, color: Colors.black54),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGeneratorCard(Generator g) {
+    final color = switch (g.type()) {
+      'solar' => Colors.amber,
+      'wind' => Colors.lightBlue,
+      _ => Colors.blueGrey,
+    };
+    final icon = switch (g.type()) {
+      'solar' => Icons.wb_sunny,
+      'wind' => Icons.air,
+      _ => Icons.factory,
+    };
+    final maxMWh = g.megawattMax * 24.0;
+    final generatedMWh = g.total().megawattHoursGenerated;
+    final utilization =
+        maxMWh > 0 ? (generatedMWh / maxMWh).clamp(0.0, 1.0) : 0.0;
+    return Container(
+      width: 240,
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      decoration: BoxDecoration(
+        border: Border(left: BorderSide(color: color, width: 4)),
+        color: color.withValues(alpha: 0.08),
+        borderRadius: const BorderRadius.horizontal(right: Radius.circular(6)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 16, color: color),
+                const SizedBox(width: 6),
+                Text(
+                  '${g.type()[0].toUpperCase()}${g.type().substring(1)}',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: color.withValues(alpha: 0.85)),
+                ),
+                const Spacer(),
+                Text('${g.megawattMax} MW',
+                    style: const TextStyle(fontSize: 12)),
+              ],
+            ),
+            if (_summary != null) ...[
+              const SizedBox(height: 4),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: utilization,
+                  minHeight: 5,
+                  backgroundColor: Colors.grey.shade200,
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '${generatedMWh.toStringAsFixed(0)} / ${maxMWh.toStringAsFixed(0)} MWh  '
+                '(${(utilization * 100).toStringAsFixed(0)}%)',
+                style: const TextStyle(fontSize: 10, color: Colors.black54),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -557,27 +731,36 @@ class _MyHomePageState extends State<MyHomePage> {
                         _batteryData),
                     _chart('Operational Cost (\$)', _costData),
                   ]),
-                  Column(mainAxisAlignment: MainAxisAlignment.start, children: [
-                    Text(
-                      'Generators (${_generators.length})',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    Text(
-                      'Battery: ${_battery.capacityMWh.toStringAsFixed(0)} MWh capacity'
-                      ' / ${_battery.maxPowerMW.toStringAsFixed(0)} MW max power',
-                      style: const TextStyle(fontStyle: FontStyle.italic),
-                    ),
-                    const SizedBox(height: 4),
-                    ..._generators.map(
-                      (g) =>
-                          Text('Type: ${g.type()}, Max: ${g.megawattMax} MW'),
-                    ),
-                  ])
+                  Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 4),
+                          child: Text(
+                            'Generators',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                        ),
+                        ..._generators.map(_buildGeneratorCard),
+                        const SizedBox(height: 12),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 4),
+                          child: Text(
+                            'Storage',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                        ),
+                        _buildBatteryCard(),
+                      ])
                 ],
               ),
             ),

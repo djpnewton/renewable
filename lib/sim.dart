@@ -243,6 +243,7 @@ class SimSummary {
   final double renewableMWh; // solar + wind
   final double carbonMWh;
   final double batteryMWh; // net discharged from battery
+  final double batteryChargedMWh; // total charged into battery
   final int totalCost;
 
   SimSummary({
@@ -253,6 +254,7 @@ class SimSummary {
     required this.renewableMWh,
     required this.carbonMWh,
     required this.batteryMWh,
+    required this.batteryChargedMWh,
     required this.totalCost,
   });
 

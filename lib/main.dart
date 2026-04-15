@@ -76,7 +76,7 @@ class _MyHomePageState extends State<MyHomePage> {
     final newGenerators = <Generator>[];
     // start with all carbon generators
     while (megawattsRequired > 0) {
-      var gen = GeneratorCarbon(1000, 1000);
+      var gen = GeneratorCarbon(1000);
       newGenerators.add(gen);
       megawattsRequired -= gen.megawattMax;
     }
@@ -193,6 +193,8 @@ class _MyHomePageState extends State<MyHomePage> {
       // 2. Battery: discharge during shortfall, charge during surplus
       var batteryContribution = 0.0;
       var batteryAccumHour = 0.0;
+      final batteryTotalCostBefore =
+          _batteries.fold(0, (s, b) => s + b.totalCost);
       if (gap > 0) {
         for (final b in _batteries) {
           final got = b.discharge(gap - batteryContribution);
@@ -204,6 +206,10 @@ class _MyHomePageState extends State<MyHomePage> {
           batteryAccumHour += b.charge((-gap) - batteryAccumHour);
         }
       }
+      final batteryCostHour = _batteries.fold(0, (s, b) => s + b.totalCost) -
+          batteryTotalCostBefore;
+      final batteryMaintenanceHour =
+          _batteries.fold(0, (s, b) => s + b.maintenanceCostPerHour);
 
       // 3. Carbon fills any remaining gap (dispatchable peaker)
       final carbonGens = _generators.whereType<GeneratorCarbon>().toList();
@@ -226,7 +232,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
       final totalProducedHour =
           baselineOutput + carbonOutput + batteryContribution;
-      final totalCostHour = freeCost + carbonCost;
+      final totalCostHour =
+          freeCost + carbonCost + batteryCostHour + batteryMaintenanceHour;
       produced.add(FlSpot(wp.hour.toDouble(), totalProducedHour));
       cost.add(FlSpot(wp.hour.toDouble(), totalCostHour.toDouble()));
       batteryCharge.add(FlSpot(
@@ -570,12 +577,349 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  // ── Optimiser helpers ────────────────────────────────────────────────────
+
+  Generator _cloneGenerator(Generator g, {int? mw}) {
+    final m = mw ?? g.megawattMax;
+    if (g is GeneratorCarbon) return GeneratorCarbon(m);
+    if (g is GeneratorSolar) return GeneratorSolar(m);
+    if (g is GeneratorWind) {
+      return GeneratorWind(m, maxWind: g.maxWind, minWind: g.minWind);
+    }
+    throw StateError('Unknown generator type: ${g.type()}');
+  }
+
+  Battery _cloneBattery(Battery b, {double? capacityMWh}) {
+    final cap = capacityMWh ?? b.capacityMWh;
+    return Battery(cap, cap / 2);
+  }
+
+  /// Runs a full 24-hour simulation without touching widget state.
+  /// Returns (shortfall MWh, total cost).
+  (double, int) _evalSim(
+      List<Generator> gens, List<Battery> bats, Weather24h w24) {
+    for (final g in gens) {
+      g.reset();
+    }
+    for (final b in bats) {
+      b.reset();
+    }
+    var shortfall = 0.0;
+    var totalCost = 0;
+    for (final wp in w24.periods) {
+      final demandMW = wp.energyDemand(_city).toDouble();
+      // 1. Renewables
+      var freeOutput = 0.0;
+      var freeCost = 0;
+      for (final gen in gens) {
+        if (gen is! GeneratorCarbon) {
+          final gp = gen.generate(wp, 100);
+          freeOutput += gp.megawattHoursGenerated;
+          freeCost += gp.cost;
+        }
+      }
+      var gap = demandMW - freeOutput;
+      // 2. Battery
+      var batteryContrib = 0.0;
+      final costBefore = bats.fold(0, (s, b) => s + b.totalCost);
+      if (gap > 0) {
+        for (final b in bats) {
+          batteryContrib += b.discharge(gap - batteryContrib);
+        }
+        gap -= batteryContrib;
+      } else {
+        var acc = 0.0;
+        for (final b in bats) {
+          acc += b.charge((-gap) - acc);
+        }
+      }
+      final batteryCostHour =
+          bats.fold(0, (s, b) => s + b.totalCost) - costBefore;
+      final batteryMaintHour =
+          bats.fold(0, (s, b) => s + b.maintenanceCostPerHour);
+      // 3. Carbon
+      final carbonGens = gens.whereType<GeneratorCarbon>().toList();
+      final totalCarbonCap = carbonGens.fold(0, (s, g) => s + g.megawattMax);
+      var carbonOutput = 0.0;
+      var carbonCost = 0;
+      if (totalCarbonCap > 0 && gap > 0) {
+        final pct = min(100.0, gap / totalCarbonCap * 100);
+        for (final g in carbonGens) {
+          final gp = g.generate(wp, pct);
+          carbonOutput += gp.megawattHoursGenerated;
+          carbonCost += gp.cost;
+        }
+      } else {
+        for (final g in carbonGens) {
+          g.generate(wp, 0);
+        }
+      }
+      final produced = freeOutput + batteryContrib + carbonOutput;
+      final diff = produced - demandMW;
+      if (diff < -0.001) shortfall += -diff;
+      totalCost += freeCost + batteryCostHour + batteryMaintHour + carbonCost;
+    }
+    return (shortfall, totalCost);
+  }
+
+  /// Finds the lowest-cost fleet capacity (same generator types, optimised MW)
+  /// that produces no shortfall against the last simulated weather.
+  void _optimize() {
+    if (_lastWeather == null) return;
+    final w24 = _lastWeather!;
+    final rng = Random();
+    final peakDemand =
+        w24.periods.map((wp) => wp.energyDemand(_city)).reduce(max);
+
+    final upperMW = (peakDemand * 20).round().clamp(1000, 2000000);
+    final upperCap =
+        w24.periods.fold(0.0, (s, wp) => s + wp.energyDemand(_city));
+
+    // ── Augmented seed fleet ─────────────────────────────────────────────────
+    // Always include at least one solar, wind, and battery candidate so the
+    // optimiser can discover them even when absent from the current fleet.
+    // Candidates that offer no benefit are removed by the prune pass.
+    final hasSolar = _generators.any((g) => g is GeneratorSolar);
+    final hasWind = _generators.any((g) => g is GeneratorWind);
+    final hasCarbon = _generators.any((g) => g is GeneratorCarbon);
+    final seedGens = <Generator>[
+      ..._generators.map(_cloneGenerator),
+      if (!hasSolar) GeneratorSolar(peakDemand.round().clamp(1, upperMW)),
+      if (!hasWind) GeneratorWind(peakDemand.round().clamp(1, upperMW)),
+      if (!hasCarbon) GeneratorCarbon(peakDemand.round().clamp(1, upperMW)),
+    ];
+    final seedBats = <Battery>[
+      ..._batteries.map(_cloneBattery),
+      if (_batteries.isEmpty)
+        Battery(
+          (peakDemand * 4.0).clamp(1.0, upperCap),
+          (peakDemand * 2.0).clamp(1.0, upperCap / 2),
+        ),
+    ];
+
+    // ── Coordinate-descent helper ────────────────────────────────────────────
+    (List<Generator>, List<Battery>, int) runDescent(
+        List<Generator> g0, List<Battery> b0) {
+      var gens = g0.map(_cloneGenerator).toList();
+      var bats = b0.map(_cloneBattery).toList();
+
+      (double, int) eg(int i, int mw) {
+        final gs = [
+          for (var j = 0; j < gens.length; j++)
+            j == i ? _cloneGenerator(gens[j], mw: mw) : _cloneGenerator(gens[j])
+        ];
+        return _evalSim(gs, bats.map(_cloneBattery).toList(), w24);
+      }
+
+      (double, int) eb(int i, double cap) {
+        final bs = [
+          for (var j = 0; j < bats.length; j++)
+            j == i
+                ? _cloneBattery(bats[j], capacityMWh: cap)
+                : _cloneBattery(bats[j])
+        ];
+        return _evalSim(gens.map(_cloneGenerator).toList(), bs, w24);
+      }
+
+      var prevCost = 0x7fffffff;
+      for (int pass = 0; pass < 12; pass++) {
+        // ── Generators ──────────────────────────────────────────────────────
+        for (int i = 0; i < gens.length; i++) {
+          if (eg(i, upperMW).$1 > 0.001) continue;
+
+          // All generator types: find feasibility floor (may be 0), then
+          // ternary-search for minimum total cost.
+          // Carbon maintenance grows with capacity, so min-feasible ≠ min-cost
+          // when other assets already cover demand and extra carbon only adds
+          // maintenance overhead.
+          var mwMin = 0;
+          if (eg(i, 0).$1 > 0.001) {
+            // Generator is needed for feasibility — binary-search its floor.
+            var lo = 1, hi = upperMW;
+            mwMin = upperMW;
+            while (lo <= hi) {
+              final mid = (lo + hi) ~/ 2;
+              if (eg(i, mid).$1 <= 0.001) {
+                mwMin = mid;
+                hi = mid - 1;
+              } else {
+                lo = mid + 1;
+              }
+            }
+          }
+          // Ternary-search [mwMin, upperMW] for minimum total cost.
+          var lo = mwMin, hi = upperMW;
+          for (int s = 0; s < 50; s++) {
+            final third = (hi - lo) ~/ 3;
+            if (third == 0) break;
+            final m1 = lo + third, m2 = hi - third;
+            if (eg(i, m1).$2 <= eg(i, m2).$2) {
+              hi = m2;
+            } else {
+              lo = m1;
+            }
+          }
+          var best = lo, bestC = eg(i, lo).$2;
+          for (var mw = lo + 1; mw <= hi; mw++) {
+            final c = eg(i, mw).$2;
+            if (c < bestC) {
+              bestC = c;
+              best = mw;
+            }
+          }
+          gens[i] = _cloneGenerator(gens[i], mw: best);
+        }
+
+        // ── Batteries ─────────────────────────────────────────────────────
+        for (int i = 0; i < bats.length; i++) {
+          // capMin = 0 when fleet is already feasible without this battery.
+          double capMin = 0;
+          if (eb(i, 0).$1 > 0.001) {
+            if (eb(i, upperCap).$1 > 0.001) continue;
+            double loF = 0, hiF = upperCap;
+            for (int s = 0; s < 32; s++) {
+              final mid = (loF + hiF) / 2;
+              if (eb(i, mid).$1 <= 0.001) {
+                capMin = mid;
+                hiF = mid;
+              } else {
+                loF = mid;
+              }
+            }
+          }
+          // Ternary-search [capMin, upperCap] for minimum total cost.
+          double loF = capMin, hiF = upperCap;
+          for (int s = 0; s < 50; s++) {
+            if (hiF - loF < 0.5) break;
+            final third = (hiF - loF) / 3;
+            final m1 = loF + third, m2 = hiF - third;
+            if (eb(i, m1).$2 <= eb(i, m2).$2) {
+              hiF = m2;
+            } else {
+              loF = m1;
+            }
+          }
+          bats[i] = _cloneBattery(bats[i], capacityMWh: (loF + hiF) / 2);
+        }
+
+        final (sf, cost) = _evalSim(gens.map(_cloneGenerator).toList(),
+            bats.map(_cloneBattery).toList(), w24);
+        if (sf > 0.001) break;
+        if (prevCost - cost < 1) break;
+        prevCost = cost;
+      }
+
+      final (sf, cost) = _evalSim(gens.map(_cloneGenerator).toList(),
+          bats.map(_cloneBattery).toList(), w24);
+      return (gens, bats, sf <= 0.001 ? cost : 0x7fffffff);
+    }
+
+    // ── Perturbation helpers ─────────────────────────────────────────────────
+    List<Generator> shakeGens(List<Generator> gens, double logScale) =>
+        gens.map((g) {
+          final f = exp((rng.nextDouble() * 2 - 1) * logScale);
+          return _cloneGenerator(g,
+              mw: (g.megawattMax * f).round().clamp(1, upperMW));
+        }).toList();
+
+    List<Battery> shakeBats(List<Battery> bats, double logScale) =>
+        bats.map((b) {
+          final f = exp((rng.nextDouble() * 2 - 1) * logScale);
+          return _cloneBattery(b,
+              capacityMWh: (b.capacityMWh * f).clamp(1.0, upperCap));
+        }).toList();
+
+    // ── Multi-start: all restarts from perturbed *seed* ──────────────────────
+    // Restarting from the augmented seed (not bestGens/bestBats) guarantees
+    // that solar, wind, and battery candidates are present in every search,
+    // preventing coordinate descent from ignoring them entirely.
+    var bestGens = seedGens;
+    var bestBats = seedBats;
+    var bestCost = 0x7fffffff;
+
+    const shakeSchedule = [
+      0.0,
+      0.3,
+      0.6,
+      0.3,
+      1.0,
+      0.5,
+      1.5,
+      0.4,
+      0.8,
+      1.2,
+      0.7,
+      2.0,
+      0.4,
+      1.0,
+      0.6,
+    ];
+    for (final scale in shakeSchedule) {
+      final startGens = scale == 0.0
+          ? seedGens.map(_cloneGenerator).toList()
+          : shakeGens(seedGens, scale);
+      final startBats = scale == 0.0
+          ? seedBats.map(_cloneBattery).toList()
+          : shakeBats(seedBats, scale);
+      final (g, b, c) = runDescent(startGens, startBats);
+      if (c < bestCost) {
+        bestGens = g;
+        bestBats = b;
+        bestCost = c;
+      }
+    }
+
+    // ── Prune pass: remove assets that don't reduce total cost ───────────────
+    // Eliminates useless candidates and any existing asset made redundant by
+    // resizing others. Removes entirely rather than leaving at near-zero.
+    var finalGens = List<Generator>.from(bestGens);
+    var finalBats = List<Battery>.from(bestBats);
+    for (int i = finalGens.length - 1; i >= 0; i--) {
+      if (finalGens.length <= 1) break;
+      final testGens = List<Generator>.from(finalGens)..removeAt(i);
+      final (sf, c) = _evalSim(testGens.map(_cloneGenerator).toList(),
+          finalBats.map(_cloneBattery).toList(), w24);
+      if (sf <= 0.001 && c <= bestCost + 1) {
+        finalGens = testGens;
+        bestCost = c;
+      }
+    }
+    for (int i = finalBats.length - 1; i >= 0; i--) {
+      final testBats = List<Battery>.from(finalBats)..removeAt(i);
+      final (sf, c) = _evalSim(finalGens.map(_cloneGenerator).toList(),
+          testBats.map(_cloneBattery).toList(), w24);
+      if (sf <= 0.001 && c <= bestCost + 1) {
+        finalBats = testBats;
+        bestCost = c;
+      }
+    }
+
+    // ── Consolidation pass: merge same-type generators/batteries into one ────
+    final consolidatedGens = <Generator>[];
+    for (final type in [GeneratorCarbon, GeneratorSolar, GeneratorWind]) {
+      final group = finalGens.where((g) => g.runtimeType == type).toList();
+      if (group.isEmpty) continue;
+      final totalMW = group.fold(0, (sum, g) => sum + g.megawattMax);
+      consolidatedGens.add(_cloneGenerator(group.first, mw: totalMW));
+    }
+    final totalBatCap = finalBats.fold(0.0, (sum, b) => sum + b.capacityMWh);
+    final totalBatPower = finalBats.fold(0.0, (sum, b) => sum + b.maxPowerMW);
+    final consolidatedBats =
+        finalBats.isEmpty ? <Battery>[] : [Battery(totalBatCap, totalBatPower)];
+
+    setState(() {
+      _generators = consolidatedGens;
+      _batteries = consolidatedBats;
+    });
+    _runSim(w24);
+  }
+
   void _convertGenerator(int index, String toType) {
     final existing = _generators[index];
     final replacement = switch (toType) {
-      'solar' => GeneratorSolar(250, existing.megawattMax) as Generator,
-      'wind' => GeneratorWind(250, existing.megawattMax, 60, 15),
-      'carbon' => GeneratorCarbon(1000, existing.megawattMax),
+      'solar' => GeneratorSolar(existing.megawattMax) as Generator,
+      'wind' => GeneratorWind(existing.megawattMax),
+      'carbon' => GeneratorCarbon(existing.megawattMax),
       _ => throw Exception('Unknown type'),
     };
     _generators[index] = replacement;
@@ -597,7 +941,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void _addGenerator(int mw) {
-    _generators.add(GeneratorCarbon(mw, mw));
+    _generators.add(GeneratorCarbon(mw));
     if (_lastWeather != null) {
       _runSim(_lastWeather!);
     } else {
@@ -853,13 +1197,138 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  Widget _assumptionRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(label,
+                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(value,
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _assumptionSection(String title, List<Widget> rows) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Text(title,
+            style: const TextStyle(
+                fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+        const Divider(height: 6),
+        ...rows,
+      ],
+    );
+  }
+
+  Widget _buildAssumptionsDrawer() {
+    return Drawer(
+      width: 320,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Model Assumptions',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                _assumptionSection('Carbon Generators', [
+                  _assumptionRow('Operating cost',
+                      '\$$carbonCostPerMwPerHour / MW / hr at full output'),
+                  _assumptionRow('Maintenance cost',
+                      '\$$carbonMaintenanceCostPerMwPerHour / MW / hr (always)'),
+                  _assumptionRow('Dispatch', 'On-demand to fill gap'),
+                ]),
+                _assumptionSection('Solar Generators', [
+                  _assumptionRow('Operating cost',
+                      '\$$solarCostPerMwPerHour / MW / hr (fixed)'),
+                  _assumptionRow('Maintenance cost',
+                      '\$$solarMaintenanceCostPerMwPerHour / MW / hr (always)'),
+                  _assumptionRow('Output', 'Scales with sun % (0–100)'),
+                  _assumptionRow('Dispatch', 'Always at full sun capacity'),
+                ]),
+                _assumptionSection('Wind Generators', [
+                  _assumptionRow('Operating cost',
+                      '\$$windCostPerMwPerHour / MW / hr (fixed)'),
+                  _assumptionRow('Maintenance cost',
+                      '\$$windMaintenanceCostPerMwPerHour / MW / hr (always)'),
+                  _assumptionRow(
+                      'Min wind', '$windMinKmh km/h (no output below)'),
+                  _assumptionRow(
+                      'Max wind', '$windMaxKmh km/h (shutdown above)'),
+                  _assumptionRow(
+                      'Output', 'Linear between min and max wind speed'),
+                  _assumptionRow('Dispatch', 'Always at full wind capacity'),
+                ]),
+                _assumptionSection('Battery Storage', [
+                  _assumptionRow('Discharge cost',
+                      '\$$batteryCostPerMwhDischarged / MWh discharged'),
+                  _assumptionRow('Maintenance cost',
+                      '\$$batteryMaintenanceCostPerMwhPerHour / MWh capacity / hr'),
+                  _assumptionRow('Max power', '50% of capacity (MWh → MW)'),
+                  _assumptionRow('Charge', 'Absorbs surplus renewable first'),
+                  _assumptionRow(
+                      'Discharge', 'Fills gap before carbon dispatch'),
+                ]),
+                _assumptionSection('Demand Model', [
+                  _assumptionRow('Base demand',
+                      '${mwPerThousandPeople.toStringAsFixed(0)} MW per 1,000 people'),
+                  _assumptionRow('Minimum', '$minCityDemandMw MW'),
+                  _assumptionRow('Extreme temp (≤10 or ≥30 °C)',
+                      '×$extremeTempDemandMultiplier'),
+                  _assumptionRow('Night (0–5h)', '×0.60'),
+                  _assumptionRow('Early morning (6–7h)', '×0.75'),
+                  _assumptionRow('Morning peak (8–10h)', '×1.00'),
+                  _assumptionRow('Midday (11–14h)', '×0.85'),
+                  _assumptionRow('Afternoon (15–17h)', '×0.90'),
+                  _assumptionRow('Evening peak (18–21h)', '×1.10'),
+                  _assumptionRow('Late night (22–23h)', '×0.70'),
+                ]),
+                _assumptionSection('Simulation', [
+                  _assumptionRow('Duration', '24 hours'),
+                  _assumptionRow('Weather', 'Random per simulation run'),
+                  _assumptionRow(
+                      'Priority order', 'Renewables → Battery → Carbon'),
+                ]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
+        actions: [
+          Builder(
+            builder: (ctx) => IconButton(
+              icon: const Icon(Icons.menu),
+              tooltip: 'Assumptions',
+              onPressed: () => Scaffold.of(ctx).openEndDrawer(),
+            ),
+          ),
+        ],
       ),
+      endDrawer: _buildAssumptionsDrawer(),
       body: SingleChildScrollView(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -900,6 +1369,23 @@ class _MyHomePageState extends State<MyHomePage> {
                       mainAxisAlignment: MainAxisAlignment.start,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (_lastWeather != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: SizedBox(
+                              width: 240,
+                              child: FilledButton.icon(
+                                onPressed: _optimize,
+                                icon: const Icon(Icons.auto_fix_high, size: 16),
+                                label: const Text('Optimize'),
+                                style: FilledButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 6),
+                                  textStyle: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                            ),
+                          ),
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 4),
                           child: Text(

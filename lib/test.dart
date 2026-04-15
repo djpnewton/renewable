@@ -46,9 +46,9 @@ void main() async {
   final city = City.random(City.parseCsv(data));
   printCity(city);
 
-  var coal = GeneratorCarbon(1000, 1000);
-  var wind = GeneratorWind(250, 1000, 60, 15);
-  var solar = GeneratorSolar(250, 1000);
+  var coal = GeneratorCarbon(1000);
+  var wind = GeneratorWind(250);
+  var solar = GeneratorSolar(250);
 
   var w24 = Weather24h();
   printWeather24(w24);

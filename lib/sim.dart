@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'cities.dart';
+import 'config.dart';
 
 String niceTime(int hour) {
   assert(hour >= 0 && hour <= 23);
@@ -115,12 +116,15 @@ abstract class Generator {
 }
 
 class GeneratorCarbon implements Generator {
-  int operationCost;
   @override
   int megawattMax;
   GenerationPeriod _total = GenerationPeriod.zero();
 
-  GeneratorCarbon(this.operationCost, this.megawattMax);
+  GeneratorCarbon(this.megawattMax);
+
+  int get _costPerHour => (carbonCostPerMwPerHour * megawattMax);
+  int get _maintenanceCostPerHour =>
+      carbonMaintenanceCostPerMwPerHour * megawattMax;
 
   @override
   String type() {
@@ -131,7 +135,10 @@ class GeneratorCarbon implements Generator {
   GenerationPeriod generate(WeatherPeriod wp, double percentRequired) {
     var generated = megawattMax * percentRequired / 100.0;
     var gp = GenerationPeriod(
-        (operationCost * percentRequired / 100).round(), generated, generated);
+        (_costPerHour * percentRequired / 100).round() +
+            _maintenanceCostPerHour,
+        generated,
+        generated);
     _total = _total.add(gp);
     return gp;
   }
@@ -144,12 +151,15 @@ class GeneratorCarbon implements Generator {
 }
 
 class GeneratorSolar implements Generator {
-  int operationCost;
   @override
   int megawattMax; // generation capacity at 100% sun
   GenerationPeriod _total = GenerationPeriod.zero();
 
-  GeneratorSolar(this.operationCost, this.megawattMax);
+  GeneratorSolar(this.megawattMax);
+
+  int get _costPerHour => solarCostPerMwPerHour * megawattMax;
+  int get _maintenanceCostPerHour =>
+      solarMaintenanceCostPerMwPerHour * megawattMax;
 
   @override
   String type() {
@@ -158,8 +168,8 @@ class GeneratorSolar implements Generator {
 
   @override
   GenerationPeriod generate(WeatherPeriod wp, double percentRequired) {
-    var gp = GenerationPeriod(operationCost, megawattMax * wp.sun / 100,
-        megawattMax * percentRequired / 100.0);
+    var gp = GenerationPeriod(_costPerHour + _maintenanceCostPerHour,
+        megawattMax * wp.sun / 100, megawattMax * percentRequired / 100.0);
     _total = _total.add(gp);
     return gp;
   }
@@ -172,15 +182,18 @@ class GeneratorSolar implements Generator {
 }
 
 class GeneratorWind implements Generator {
-  int operationCost;
   @override
   int megawattMax; // generation capacity at max windspeed
-  int maxWind; // maximum windspeed
-  int minWind; // minimum windspeed
+  int maxWind; // maximum windspeed (km/h)
+  int minWind; // minimum windspeed (km/h)
   GenerationPeriod _total = GenerationPeriod.zero();
 
-  GeneratorWind(
-      this.operationCost, this.megawattMax, this.maxWind, this.minWind);
+  GeneratorWind(this.megawattMax,
+      {this.maxWind = windMaxKmh, this.minWind = windMinKmh});
+
+  int get _costPerHour => windCostPerMwPerHour * megawattMax;
+  int get _maintenanceCostPerHour =>
+      windMaintenanceCostPerMwPerHour * megawattMax;
 
   @override
   String type() {
@@ -192,9 +205,10 @@ class GeneratorWind implements Generator {
     assert(minWind >= 0);
     assert(maxWind > minWind);
     var required = megawattMax * percentRequired / 100.0;
-    var gp = GenerationPeriod(operationCost, 0, required);
+    final totalCost = _costPerHour + _maintenanceCostPerHour;
+    var gp = GenerationPeriod(totalCost, 0, required);
     if (wp.wind <= maxWind && wp.wind >= minWind) {
-      gp = GenerationPeriod(operationCost,
+      gp = GenerationPeriod(totalCost,
           megawattMax * (wp.wind - minWind) / (maxWind - minWind), required);
     }
     _total = _total.add(gp);
@@ -212,14 +226,21 @@ class Battery {
   double capacityMWh;
   double maxPowerMW;
   double chargeMWh;
+  int totalCost;
 
-  Battery(this.capacityMWh, this.maxPowerMW) : chargeMWh = 0;
+  Battery(this.capacityMWh, this.maxPowerMW)
+      : chargeMWh = 0,
+        totalCost = 0;
+
+  int get maintenanceCostPerHour =>
+      (capacityMWh * batteryMaintenanceCostPerMwhPerHour).round();
 
   /// Returns MWh actually discharged (positive value).
   double discharge(double neededMWh) {
     var available = [neededMWh, maxPowerMW, chargeMWh].reduce(min);
     if (available < 0) available = 0;
     chargeMWh -= available;
+    totalCost += (available * batteryCostPerMwhDischarged).round();
     return available;
   }
 
@@ -232,7 +253,10 @@ class Battery {
     return canCharge;
   }
 
-  void reset() => chargeMWh = 0;
+  void reset() {
+    chargeMWh = 0;
+    totalCost = 0;
+  }
 }
 
 class SimSummary {

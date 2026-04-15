@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - name: Insert git sha
         run: |
           sed -i -e "s|GIT_SHA_REPLACE|$GITHUB_SHA|g" lib/config.dart
@@ -24,12 +24,11 @@ jobs:
           sed -i -e "s|BUILD_DATE_REPLACE|$(date)|g" lib/config.dart
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.x'
+          flutter-version: '3.41.x'
       - run: flutter pub get
       #- run: flutter test
       - run: dart format --set-exit-if-changed lib
       - run: flutter analyze
-      - uses: bluefireteam/flutter-gh-pages@v7
+      - uses: bluefireteam/flutter-gh-pages@v9
         with:
-          webRenderer: canvaskit
           baseHref: /${{ github.event.repository.name }}/

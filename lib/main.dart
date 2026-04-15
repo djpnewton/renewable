@@ -112,7 +112,7 @@ class _MyHomePageState extends State<MyHomePage> {
     final text = niceTime(value.toInt());
 
     return SideTitleWidget(
-      axisSide: meta.axisSide,
+      meta: meta,
       space: 4,
       child: Text(text, style: style),
     );
@@ -573,12 +573,10 @@ class _MyHomePageState extends State<MyHomePage> {
                       style: const TextStyle(fontStyle: FontStyle.italic),
                     ),
                     const SizedBox(height: 4),
-                    ..._generators
-                        .map(
-                          (g) => Text(
-                              'Type: ${g.type()}, Max: ${g.megawattMax} MW'),
-                        )
-                        .toList(),
+                    ..._generators.map(
+                      (g) =>
+                          Text('Type: ${g.type()}, Max: ${g.megawattMax} MW'),
+                    ),
                   ])
                 ],
               ),

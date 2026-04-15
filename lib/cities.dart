@@ -19,12 +19,12 @@ class City {
 
   static List<City> parseCsv(String data) {
     final list = List<City>.empty(growable: true);
-    final res = const CsvToListConverter().convert(data);
+    final res = Csv().decode(data);
     for (var index = 1; index < res.length; index++) {
       final cityRow = res[index];
       final name = cityRow[0] as String;
       final country = cityRow[3] as String;
-      final population = cityRow[6] as int;
+      final population = int.parse(cityRow[6].toString());
       list.add(City(name, country, population));
     }
     return list;

@@ -287,6 +287,16 @@ class SimSummary {
     required this.totalCapitalCost,
   });
 
+  /// Daily loan repayment using an annuity formula (principal = totalCapitalCost).
+  double get dailyLoanRepayment {
+    const r = loanInterestRate;
+    const n = loanTermYears;
+    if (totalCapitalCost == 0) return 0;
+    final annualPayment =
+        totalCapitalCost * r * pow(1 + r, n) / (pow(1 + r, n) - 1);
+    return annualPayment / 365;
+  }
+
   double get renewablePercent =>
       totalProducedMWh > 0 ? renewableMWh / totalProducedMWh * 100 : 0;
   double get carbonPercent =>

@@ -2,6 +2,13 @@ const String gitSha = 'GIT_SHA_REPLACE';
 const String buildDate = 'BUILD_DATE_REPLACE';
 const String appVersion = 'VERSION_REPLACE';
 
+// ── Capital financing assumptions ────────────────────────────────────────────
+/// Annual interest rate for capital loan (e.g. 0.05 = 5%)
+const double loanInterestRate = 0.05;
+
+/// Loan repayment term in years
+const int loanTermYears = 20;
+
 // ── Generator capital costs ($ per MW of installed capacity) ─────────────────
 /// Carbon (NGCC) capital cost per MW
 const int carbonCapitalCostPerMw = 1000000; // ~ $1,000 / kW

@@ -50,6 +50,8 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
+enum OptimizeMode { operational, capital, both }
+
 class _MyHomePageState extends State<MyHomePage> {
   var _city = City.empty();
   var _generators = <Generator>[];
@@ -57,6 +59,7 @@ class _MyHomePageState extends State<MyHomePage> {
   SimSummary? _summary;
   Weather24h? _lastWeather;
   var _includeBaseload = false;
+  var _optimizeMode = OptimizeMode.operational;
   var _tempData = LineChartData();
   var _sunData = LineChartData();
   var _windData = LineChartData();
@@ -499,6 +502,11 @@ class _MyHomePageState extends State<MyHomePage> {
         gridData: const FlGridData(
             show: true, verticalInterval: 1, horizontalInterval: 1000),
       );
+      final hourlyCapital = _summary!.dailyLoanRepayment / 24;
+      final capitalSpots =
+          List.generate(24, (h) => FlSpot(h.toDouble(), hourlyCapital));
+      final totalSpots =
+          cost.map((s) => FlSpot(s.x, s.y + hourlyCapital)).toList();
       _costData = LineChartData(
         lineBarsData: [
           LineChartBarData(
@@ -506,6 +514,19 @@ class _MyHomePageState extends State<MyHomePage> {
               isCurved: true,
               barWidth: 2,
               color: Colors.purple,
+              dotData: const FlDotData(show: false)),
+          LineChartBarData(
+              spots: capitalSpots,
+              isCurved: false,
+              barWidth: 2,
+              color: Colors.orange,
+              dashArray: [4, 4],
+              dotData: const FlDotData(show: false)),
+          LineChartBarData(
+              spots: totalSpots,
+              isCurved: true,
+              barWidth: 2,
+              color: Colors.red,
               dotData: const FlDotData(show: false)),
         ],
         minY: 0,
@@ -613,10 +634,18 @@ class _MyHomePageState extends State<MyHomePage> {
           const Divider(height: 10),
           hrow([
             cell('Capital Cost', fmtDollars(s.totalCapitalCost)),
+            cell('Daily Loan Repayment',
+                '\$${s.dailyLoanRepayment.toStringAsFixed(0)} / day'),
+            if (s.totalDemandMWh > 0)
+              cell('Loan / kWh',
+                  '\$${(s.dailyLoanRepayment / (s.totalDemandMWh * 1000)).toStringAsFixed(4)}'),
             cell('Operational Cost', fmtDollars(s.totalCost)),
             if (s.totalDemandMWh > 0)
               cell('Operational / kWh',
                   '\$${(s.totalCost / (s.totalDemandMWh * 1000)).toStringAsFixed(4)}'),
+            if (s.totalDemandMWh > 0)
+              cell('Total / kWh',
+                  '\$${((s.totalCost + s.dailyLoanRepayment) / (s.totalDemandMWh * 1000)).toStringAsFixed(4)}'),
           ]),
         ],
       ),
@@ -638,6 +667,23 @@ class _MyHomePageState extends State<MyHomePage> {
   Battery _cloneBattery(Battery b, {double? capacityMWh}) {
     final cap = capacityMWh ?? b.capacityMWh;
     return Battery(cap, cap / 2);
+  }
+
+  int _objective(int opCost, List<Generator> gens, List<Battery> bats) {
+    if (_optimizeMode == OptimizeMode.operational) return opCost;
+    final capCost = gens.fold<int>(0, (s, g) => s + g.capitalCost) +
+        bats.fold<int>(0, (s, b) => s + b.capitalCost);
+    // Convert one-time capital cost to daily equivalent via annuity formula,
+    // so it's on the same scale as daily operational cost.
+    const r = loanInterestRate;
+    const n = loanTermYears;
+    final dailyCap =
+        (capCost * r * pow(1 + r, n) / (pow(1 + r, n) - 1) / 365).round();
+    return switch (_optimizeMode) {
+      OptimizeMode.capital => dailyCap,
+      OptimizeMode.both => opCost + dailyCap,
+      OptimizeMode.operational => opCost, // unreachable
+    };
   }
 
   /// Runs a full 24-hour simulation without touching widget state.
@@ -753,7 +799,9 @@ class _MyHomePageState extends State<MyHomePage> {
           for (var j = 0; j < gens.length; j++)
             j == i ? _cloneGenerator(gens[j], mw: mw) : _cloneGenerator(gens[j])
         ];
-        return _evalSim(gs, bats.map(_cloneBattery).toList(), w24);
+        final batsClone = bats.map(_cloneBattery).toList();
+        final (sf, opCost) = _evalSim(gs, batsClone, w24);
+        return (sf, _objective(opCost, gs, batsClone));
       }
 
       (double, int) eb(int i, double cap) {
@@ -763,7 +811,9 @@ class _MyHomePageState extends State<MyHomePage> {
                 ? _cloneBattery(bats[j], capacityMWh: cap)
                 : _cloneBattery(bats[j])
         ];
-        return _evalSim(gens.map(_cloneGenerator).toList(), bs, w24);
+        final gensClone = gens.map(_cloneGenerator).toList();
+        final (sf, opCost) = _evalSim(gensClone, bs, w24);
+        return (sf, _objective(opCost, gensClone, bs));
       }
 
       var prevCost = 0x7fffffff;
@@ -849,14 +899,16 @@ class _MyHomePageState extends State<MyHomePage> {
 
         final (sf, cost) = _evalSim(gens.map(_cloneGenerator).toList(),
             bats.map(_cloneBattery).toList(), w24);
+        final obj = _objective(cost, gens, bats);
         if (sf > 0.001) break;
-        if (prevCost - cost < 1) break;
-        prevCost = cost;
+        if (prevCost - obj < 1) break;
+        prevCost = obj;
       }
 
       final (sf, cost) = _evalSim(gens.map(_cloneGenerator).toList(),
           bats.map(_cloneBattery).toList(), w24);
-      return (gens, bats, sf <= 0.001 ? cost : 0x7fffffff);
+      final finalObj = _objective(cost, gens, bats);
+      return (gens, bats, sf <= 0.001 ? finalObj : 0x7fffffff);
     }
 
     // ── Perturbation helpers ─────────────────────────────────────────────────
@@ -914,6 +966,44 @@ class _MyHomePageState extends State<MyHomePage> {
       }
     }
 
+    // ── Topology seeds: explore each single-type fleet to escape local minima ─
+    // The augmented seed always has all types present, so coordinate descent
+    // can get stuck in a renewable+storage basin even when a carbon-only or
+    // wind+storage fleet has lower cost. These extra starts guarantee each
+    // basin is explored at least once.
+    final topologySeeds = <(List<Generator>, List<Battery>)>[
+      // Carbon-only: cheapest capital per dispatchable MW – often wins for
+      // capital-minimisation since no storage is needed.
+      (
+        [GeneratorCarbon(peakDemand.round().clamp(1, upperMW))],
+        <Battery>[],
+      ),
+      // Solar + battery: best when operational cost dominates and sun is ample.
+      (
+        [GeneratorSolar(peakDemand.round().clamp(1, upperMW))],
+        [
+          Battery(upperCap.clamp(1.0, upperCap),
+              peakDemand.toDouble().clamp(1.0, upperCap / 2))
+        ],
+      ),
+      // Wind + battery: complements solar on low-sun days.
+      (
+        [GeneratorWind(peakDemand.round().clamp(1, upperMW))],
+        [
+          Battery(upperCap.clamp(1.0, upperCap),
+              peakDemand.toDouble().clamp(1.0, upperCap / 2))
+        ],
+      ),
+    ];
+    for (final (tGens, tBats) in topologySeeds) {
+      final (g, b, c) = runDescent(tGens, tBats);
+      if (c < bestCost) {
+        bestGens = g;
+        bestBats = b;
+        bestCost = c;
+      }
+    }
+
     // ── Prune pass: remove assets that don't reduce total cost ───────────────
     // Eliminates useless candidates and any existing asset made redundant by
     // resizing others. Removes entirely rather than leaving at near-zero.
@@ -924,18 +1014,20 @@ class _MyHomePageState extends State<MyHomePage> {
       final testGens = List<Generator>.from(finalGens)..removeAt(i);
       final (sf, c) = _evalSim(testGens.map(_cloneGenerator).toList(),
           finalBats.map(_cloneBattery).toList(), w24);
-      if (sf <= 0.001 && c <= bestCost + 1) {
+      final obj = _objective(c, testGens, finalBats);
+      if (sf <= 0.001 && obj <= bestCost + 1) {
         finalGens = testGens;
-        bestCost = c;
+        bestCost = obj;
       }
     }
     for (int i = finalBats.length - 1; i >= 0; i--) {
       final testBats = List<Battery>.from(finalBats)..removeAt(i);
       final (sf, c) = _evalSim(finalGens.map(_cloneGenerator).toList(),
           testBats.map(_cloneBattery).toList(), w24);
-      if (sf <= 0.001 && c <= bestCost + 1) {
+      final obj = _objective(c, finalGens, testBats);
+      if (sf <= 0.001 && obj <= bestCost + 1) {
         finalBats = testBats;
-        bestCost = c;
+        bestCost = obj;
       }
     }
 
@@ -1368,6 +1460,13 @@ class _MyHomePageState extends State<MyHomePage> {
                   _assumptionRow('Evening peak (18–21h)', '×1.10'),
                   _assumptionRow('Late night (22–23h)', '×0.70'),
                 ]),
+                _assumptionSection('Capital Financing', [
+                  _assumptionRow('Loan interest rate',
+                      '${(loanInterestRate * 100).toStringAsFixed(0)}%'),
+                  _assumptionRow('Loan term', '$loanTermYears years'),
+                  _assumptionRow(
+                      'Repayment', 'Annuity formula, daily portion shown'),
+                ]),
                 _assumptionSection('Simulation', [
                   _assumptionRow('Duration', '24 hours'),
                   _assumptionRow('Weather', 'Random per simulation run'),
@@ -1437,7 +1536,11 @@ class _MyHomePageState extends State<MyHomePage> {
                       ('charge', Colors.green),
                       ('discharge', Colors.red),
                     ]),
-                    _chart('Operational Cost (\$)', _costData),
+                    _chart('Cost (\$)', _costData, legend: [
+                      ('operational', Colors.purple),
+                      ('capital', Colors.orange),
+                      ('total', Colors.red),
+                    ]),
                   ]),
                   Column(
                       mainAxisAlignment: MainAxisAlignment.start,
@@ -1457,6 +1560,46 @@ class _MyHomePageState extends State<MyHomePage> {
                                       const EdgeInsets.symmetric(vertical: 6),
                                   textStyle: const TextStyle(fontSize: 13),
                                 ),
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 240,
+                            child: RadioGroup<OptimizeMode>(
+                              groupValue: _optimizeMode,
+                              onChanged: (v) =>
+                                  setState(() => _optimizeMode = v!),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  for (final mode in OptimizeMode.values)
+                                    SizedBox(
+                                      height: 28,
+                                      child: Row(
+                                        children: [
+                                          Radio<OptimizeMode>(
+                                            value: mode,
+                                            materialTapTargetSize:
+                                                MaterialTapTargetSize
+                                                    .shrinkWrap,
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                          ),
+                                          Text(
+                                            switch (mode) {
+                                              OptimizeMode.operational =>
+                                                'Min operational costs',
+                                              OptimizeMode.capital =>
+                                                'Min capital costs',
+                                              OptimizeMode.both => 'Min both',
+                                            },
+                                            style:
+                                                const TextStyle(fontSize: 11),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
                           ),

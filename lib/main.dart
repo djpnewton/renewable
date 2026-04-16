@@ -112,17 +112,43 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Widget _chart(String title, LineChartData data) {
-    return Column(children: [
-      Text(
-        title,
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 2,
-        ),
-        textAlign: TextAlign.center,
+  Widget _chartTitle(String label, List<(String, Color)> legend) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 6,
+        children: [
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1)),
+          for (final (name, color) in legend) ...[
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                      color: color, borderRadius: BorderRadius.circular(2)),
+                ),
+                const SizedBox(width: 3),
+                Text(name,
+                    style:
+                        const TextStyle(fontSize: 11, color: Colors.black54)),
+              ],
+            ),
+          ],
+        ],
       ),
+    );
+  }
+
+  Widget _chart(String title, LineChartData data,
+      {List<(String, Color)> legend = const []}) {
+    return Column(children: [
+      _chartTitle(title, legend),
       SizedBox(
           width: 400,
           height: 200,
@@ -268,6 +294,8 @@ class _MyHomePageState extends State<MyHomePage> {
         batteryMWh: totalBattery,
         batteryChargedMWh: totalBatteryCharged,
         totalCost: totalCostSum,
+        totalCapitalCost: _generators.fold(0, (s, g) => s + g.capitalCost) +
+            _batteries.fold(0, (s, b) => s + b.capitalCost),
       );
       _tempData = LineChartData(
         lineBarsData: [
@@ -501,29 +529,41 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  Widget _summaryRow(String label, String value, {Color? valueColor}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 220,
-            child: Text(label,
-                style: const TextStyle(fontWeight: FontWeight.w500)),
-          ),
-          Text(value,
-              style: TextStyle(color: valueColor, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSummary(SimSummary s) {
     final shortfallColor = s.shortfallMWh > 0 ? Colors.red : Colors.green;
+
+    String fmtDollars(int v) =>
+        '\$${v.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]},')}';
+
+    Widget cell(String label, String value, {Color? valueColor}) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 10,
+                    color: Colors.black54,
+                    fontWeight: FontWeight.w500)),
+            Text(value,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: valueColor)),
+          ],
+        ),
+      );
+    }
+
+    Widget hrow(List<Widget> cells) {
+      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: cells);
+    }
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey.shade400),
         borderRadius: BorderRadius.circular(8),
@@ -532,47 +572,52 @@ class _MyHomePageState extends State<MyHomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '24-Hour Simulation Summary',
-            style: TextStyle(
-                fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              '24-Hour Simulation Summary',
+              style: TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 1),
+            ),
           ),
-          const Divider(),
-          _summaryRow(
-              'Total Demand', '${s.totalDemandMWh.toStringAsFixed(0)} MWh'),
-          _summaryRow(
-              'Total Produced', '${s.totalProducedMWh.toStringAsFixed(0)} MWh'),
-          _summaryRow(
+          const Divider(height: 10),
+          hrow([
+            cell('Demand', '${s.totalDemandMWh.toStringAsFixed(0)} MWh'),
+            cell('Produced', '${s.totalProducedMWh.toStringAsFixed(0)} MWh'),
+            cell(
               'Shortfall',
               s.shortfallMWh > 0
                   ? '${s.shortfallMWh.toStringAsFixed(0)} MWh'
                   : 'none',
-              valueColor: shortfallColor),
-          _summaryRow(
+              valueColor: shortfallColor,
+            ),
+            cell(
               'Surplus',
               s.surplusMWh > 0
                   ? '${s.surplusMWh.toStringAsFixed(0)} MWh'
-                  : 'none'),
-          const Divider(),
-          _summaryRow(
-              'Renewable (solar/wind)',
-              '${s.renewableMWh.toStringAsFixed(0)} MWh'
-                  '  (${s.renewablePercent.toStringAsFixed(1)}%)'),
-          _summaryRow(
-              'Battery (discharged)',
-              '${s.batteryMWh.toStringAsFixed(0)} MWh'
-                  '  (${s.batteryPercent.toStringAsFixed(1)}%)'),
-          _summaryRow(
+                  : 'none',
+            ),
+          ]),
+          const Divider(height: 10),
+          hrow([
+            cell('Renewable',
+                '${s.renewableMWh.toStringAsFixed(0)} MWh (${s.renewablePercent.toStringAsFixed(1)}%)'),
+            cell('Battery',
+                '${s.batteryMWh.toStringAsFixed(0)} MWh (${s.batteryPercent.toStringAsFixed(1)}%)'),
+            cell(
               'Carbon',
-              '${s.carbonMWh.toStringAsFixed(0)} MWh'
-                  '  (${s.carbonPercent.toStringAsFixed(1)}%)',
-              valueColor: s.carbonMWh > 0 ? Colors.orange : Colors.green),
-          const Divider(),
-          _summaryRow('Total Operational Cost',
-              '\$${s.totalCost.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]},')}'),
-          if (s.totalDemandMWh > 0)
-            _summaryRow('Cost per kWh',
-                '\$${(s.totalCost / (s.totalDemandMWh * 1000)).toStringAsFixed(4)}'),
+              '${s.carbonMWh.toStringAsFixed(0)} MWh (${s.carbonPercent.toStringAsFixed(1)}%)',
+              valueColor: s.carbonMWh > 0 ? Colors.orange : Colors.green,
+            ),
+          ]),
+          const Divider(height: 10),
+          hrow([
+            cell('Capital Cost', fmtDollars(s.totalCapitalCost)),
+            cell('Operational Cost', fmtDollars(s.totalCost)),
+            if (s.totalDemandMWh > 0)
+              cell('Operational / kWh',
+                  '\$${(s.totalCost / (s.totalDemandMWh * 1000)).toStringAsFixed(4)}'),
+          ]),
         ],
       ),
     );
@@ -1264,6 +1309,8 @@ class _MyHomePageState extends State<MyHomePage> {
                     style:
                         TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 _assumptionSection('Carbon Generators', [
+                  _assumptionRow('Capital cost',
+                      '\$${(carbonCapitalCostPerMw / 1000).round()}k / MW'),
                   _assumptionRow(
                       'Operating cost', '\$$carbonCostPerMwh / MWh dispatched'),
                   _assumptionRow('O&M cost',
@@ -1271,6 +1318,8 @@ class _MyHomePageState extends State<MyHomePage> {
                   _assumptionRow('Dispatch', 'On-demand to fill gap'),
                 ]),
                 _assumptionSection('Solar Generators', [
+                  _assumptionRow('Capital cost',
+                      '\$${(solarCapitalCostPerMw / 1000).round()}k / MW'),
                   _assumptionRow(
                       'Operating cost', '\$$solarCostPerMwh / MWh dispatched'),
                   _assumptionRow('O&M cost',
@@ -1279,6 +1328,8 @@ class _MyHomePageState extends State<MyHomePage> {
                   _assumptionRow('Dispatch', 'Always at full sun capacity'),
                 ]),
                 _assumptionSection('Wind Generators', [
+                  _assumptionRow('Capital cost',
+                      '\$${(windCapitalCostPerMw / 1000).round()}k / MW'),
                   _assumptionRow(
                       'Operating cost', '\$$windCostPerMwh / MWh dispatched'),
                   _assumptionRow('O&M cost',
@@ -1292,6 +1343,8 @@ class _MyHomePageState extends State<MyHomePage> {
                   _assumptionRow('Dispatch', 'Always at full wind capacity'),
                 ]),
                 _assumptionSection('Battery Storage', [
+                  _assumptionRow('Capital cost',
+                      '\$${(batteryCapitalCostPerMwh / 1000).round()}k / MWh'),
                   _assumptionRow('Discharge cost',
                       '\$$batteryCostPerMwhDischarged / MWh discharged'),
                   _assumptionRow('O&M cost',
@@ -1370,16 +1423,20 @@ class _MyHomePageState extends State<MyHomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Column(mainAxisAlignment: MainAxisAlignment.start, children: [
-                    _chart('Temp (degrees C)', _tempData),
+                    _chart('Temp (°C)', _tempData),
                     _chart('Sun (%)', _sunData),
                     _chart('Wind (km/h)', _windData),
                   ]),
                   Column(mainAxisAlignment: MainAxisAlignment.start, children: [
-                    _chart('Energy: Demand (green) vs Produced (red) (MW)',
-                        _energyData),
-                    _chart(
-                        'Battery: Storage (orange) / Charge (green) / Discharge (red) (MWh)',
-                        _batteryData),
+                    _chart('Energy (MW)', _energyData, legend: [
+                      ('demand', Colors.green),
+                      ('produced', Colors.red),
+                    ]),
+                    _chart('Battery (MWh)', _batteryData, legend: [
+                      ('storage', Colors.orange),
+                      ('charge', Colors.green),
+                      ('discharge', Colors.red),
+                    ]),
                     _chart('Operational Cost (\$)', _costData),
                   ]),
                   Column(

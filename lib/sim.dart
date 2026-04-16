@@ -109,6 +109,7 @@ class GenerationPeriod {
 
 abstract class Generator {
   int get megawattMax;
+  int get capitalCost;
   String type();
   GenerationPeriod generate(WeatherPeriod wp, double percentRequired);
   GenerationPeriod total();
@@ -124,6 +125,8 @@ class GeneratorCarbon implements Generator {
 
   int get _costPerHour => (carbonCostPerMwh * megawattMax);
   int get _omCostPerHour => carbonOMCostPerMwh * megawattMax;
+  @override
+  int get capitalCost => carbonCapitalCostPerMw * megawattMax;
 
   @override
   String type() {
@@ -157,6 +160,8 @@ class GeneratorSolar implements Generator {
 
   int get _costPerHour => solarCostPerMwh * megawattMax;
   int get _omCostPerHour => solarOMCostPerMwh * megawattMax;
+  @override
+  int get capitalCost => solarCapitalCostPerMw * megawattMax;
 
   @override
   String type() {
@@ -190,6 +195,8 @@ class GeneratorWind implements Generator {
 
   int get _costPerHour => windCostPerMwh * megawattMax;
   int get _omCostPerHour => windOMCostPerMwh * megawattMax;
+  @override
+  int get capitalCost => windCapitalCostPerMw * megawattMax;
 
   @override
   String type() {
@@ -229,6 +236,7 @@ class Battery {
         totalCost = 0;
 
   int get omCostPerHour => (capacityMWh * batteryOMCostPerMwh).round();
+  int get capitalCost => (capacityMWh * batteryCapitalCostPerMwh).round();
 
   /// Returns MWh actually discharged (positive value).
   double discharge(double neededMWh) {
@@ -264,6 +272,7 @@ class SimSummary {
   final double batteryMWh; // net discharged from battery
   final double batteryChargedMWh; // total charged into battery
   final int totalCost;
+  final int totalCapitalCost;
 
   SimSummary({
     required this.totalDemandMWh,
@@ -275,6 +284,7 @@ class SimSummary {
     required this.batteryMWh,
     required this.batteryChargedMWh,
     required this.totalCost,
+    required this.totalCapitalCost,
   });
 
   double get renewablePercent =>

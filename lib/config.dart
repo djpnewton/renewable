@@ -2,6 +2,20 @@ const String gitSha = 'GIT_SHA_REPLACE';
 const String buildDate = 'BUILD_DATE_REPLACE';
 const String appVersion = 'VERSION_REPLACE';
 
+// ── Generator capital costs ($ per MW of installed capacity) ─────────────────
+/// Carbon (NGCC) capital cost per MW
+const int carbonCapitalCostPerMw = 1000000; // ~ $1,000 / kW
+
+/// Solar (PV) capital cost per MW
+const int solarCapitalCostPerMw = 1000000; // ~ $1,000 / kW
+
+/// Wind (onshore) capital cost per MW
+const int windCapitalCostPerMw = 1400000; // ~ $1,400 / kW
+
+// ── Battery capital cost ($ per MWh of storage capacity) ─────────────────────
+/// Battery capital cost per MWh
+const int batteryCapitalCostPerMwh = 300000; // ~ $300 / kWh
+
 // ── Generator operating costs ($ per MWh dispatched) ───────────────────────
 /// Carbon generator operating cost per MWh dispatched
 const int carbonCostPerMwh = 35; // ~ 35 USD per MWh

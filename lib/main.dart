@@ -36,7 +36,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Renewable'),
+      home: MyHomePage(title: 'Renewable $appVersion'),
     );
   }
 }
@@ -1264,23 +1264,23 @@ class _MyHomePageState extends State<MyHomePage> {
                     style:
                         TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 _assumptionSection('Carbon Generators', [
-                  _assumptionRow('Operating cost',
-                      '\$$carbonCostPerMwh / MWh dispatched'),
+                  _assumptionRow(
+                      'Operating cost', '\$$carbonCostPerMwh / MWh dispatched'),
                   _assumptionRow('O&M cost',
                       '\$$carbonOMCostPerMwh / MWh capacity (always)'),
                   _assumptionRow('Dispatch', 'On-demand to fill gap'),
                 ]),
                 _assumptionSection('Solar Generators', [
-                  _assumptionRow('Operating cost',
-                      '\$$solarCostPerMwh / MWh dispatched'),
+                  _assumptionRow(
+                      'Operating cost', '\$$solarCostPerMwh / MWh dispatched'),
                   _assumptionRow('O&M cost',
                       '\$$solarOMCostPerMwh / MWh capacity (always)'),
                   _assumptionRow('Output', 'Scales with sun % (0–100)'),
                   _assumptionRow('Dispatch', 'Always at full sun capacity'),
                 ]),
                 _assumptionSection('Wind Generators', [
-                  _assumptionRow('Operating cost',
-                      '\$$windCostPerMwh / MWh dispatched'),
+                  _assumptionRow(
+                      'Operating cost', '\$$windCostPerMwh / MWh dispatched'),
                   _assumptionRow('O&M cost',
                       '\$$windOMCostPerMwh / MWh capacity (always)'),
                   _assumptionRow(
@@ -1386,7 +1386,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       mainAxisAlignment: MainAxisAlignment.start,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (_lastWeather != null)
+                        if (_lastWeather != null) ...[
                           Padding(
                             padding: const EdgeInsets.only(bottom: 4),
                             child: SizedBox(
@@ -1403,32 +1403,33 @@ class _MyHomePageState extends State<MyHomePage> {
                               ),
                             ),
                           ),
-                        SizedBox(
-                          width: 240,
-                          child: Row(
-                            children: [
-                              SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: Checkbox(
-                                  value: _includeBaseload,
-                                  onChanged: (v) =>
-                                      setState(() => _includeBaseload = v!),
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  visualDensity: VisualDensity.compact,
+                          SizedBox(
+                            width: 240,
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: Checkbox(
+                                    value: _includeBaseload,
+                                    onChanged: (v) =>
+                                        setState(() => _includeBaseload = v!),
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.compact,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 6),
-                              const Expanded(
-                                child: Text(
-                                  'Include baseload for 0 wind/solar days',
-                                  style: TextStyle(fontSize: 11),
+                                const SizedBox(width: 6),
+                                const Expanded(
+                                  child: Text(
+                                    'Include baseload for 0 wind/solar days',
+                                    style: TextStyle(fontSize: 11),
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
+                              ],
+                            ),
+                          )
+                        ],
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 4),
                           child: Text(

@@ -22,6 +22,10 @@ jobs:
       - name: Insert build date
         run: |
           sed -i -e "s|BUILD_DATE_REPLACE|$(date)|g" lib/config.dart
+      - name: Insert version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          sed -i -e "s|VERSION_REPLACE|$VERSION|g" lib/config.dart
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.41.x'

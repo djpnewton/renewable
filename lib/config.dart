@@ -1,5 +1,6 @@
 const String gitSha = 'GIT_SHA_REPLACE';
 const String buildDate = 'BUILD_DATE_REPLACE';
+const String appVersion = 'VERSION_REPLACE';
 
 // ── Generator operating costs ($ per MWh dispatched) ───────────────────────
 /// Carbon generator operating cost per MWh dispatched

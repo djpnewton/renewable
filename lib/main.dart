@@ -1265,24 +1265,24 @@ class _MyHomePageState extends State<MyHomePage> {
                         TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 _assumptionSection('Carbon Generators', [
                   _assumptionRow('Operating cost',
-                      '\$$carbonCostPerMwPerHour / MW / hr at full output'),
+                      '\$$carbonCostPerMwh / MWh dispatched'),
                   _assumptionRow('O&M cost',
-                      '\$$carbonOMCostPerMwPerHour / MW / hr (always)'),
+                      '\$$carbonOMCostPerMwh / MWh capacity (always)'),
                   _assumptionRow('Dispatch', 'On-demand to fill gap'),
                 ]),
                 _assumptionSection('Solar Generators', [
                   _assumptionRow('Operating cost',
-                      '\$$solarCostPerMwPerHour / MW / hr (fixed)'),
+                      '\$$solarCostPerMwh / MWh dispatched'),
                   _assumptionRow('O&M cost',
-                      '\$$solarOMCostPerMwPerHour / MW / hr (always)'),
+                      '\$$solarOMCostPerMwh / MWh capacity (always)'),
                   _assumptionRow('Output', 'Scales with sun % (0–100)'),
                   _assumptionRow('Dispatch', 'Always at full sun capacity'),
                 ]),
                 _assumptionSection('Wind Generators', [
                   _assumptionRow('Operating cost',
-                      '\$$windCostPerMwPerHour / MW / hr (fixed)'),
+                      '\$$windCostPerMwh / MWh dispatched'),
                   _assumptionRow('O&M cost',
-                      '\$$windOMCostPerMwPerHour / MW / hr (always)'),
+                      '\$$windOMCostPerMwh / MWh capacity (always)'),
                   _assumptionRow(
                       'Min wind', '$windMinKmh km/h (no output below)'),
                   _assumptionRow(
@@ -1295,7 +1295,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   _assumptionRow('Discharge cost',
                       '\$$batteryCostPerMwhDischarged / MWh discharged'),
                   _assumptionRow('O&M cost',
-                      '\$$batteryOMCostPerMwhPerHour / MWh capacity / hr'),
+                      '\$$batteryOMCostPerMwh / MWh capacity (always)'),
                   _assumptionRow('Max power', '50% of capacity (MWh → MW)'),
                   _assumptionRow('Charge', 'Absorbs surplus renewable first'),
                   _assumptionRow(

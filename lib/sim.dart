@@ -122,8 +122,8 @@ class GeneratorCarbon implements Generator {
 
   GeneratorCarbon(this.megawattMax);
 
-  int get _costPerHour => (carbonCostPerMwPerHour * megawattMax);
-  int get _omCostPerHour => carbonOMCostPerMwPerHour * megawattMax;
+  int get _costPerHour => (carbonCostPerMwh * megawattMax);
+  int get _omCostPerHour => carbonOMCostPerMwh * megawattMax;
 
   @override
   String type() {
@@ -155,8 +155,8 @@ class GeneratorSolar implements Generator {
 
   GeneratorSolar(this.megawattMax);
 
-  int get _costPerHour => solarCostPerMwPerHour * megawattMax;
-  int get _omCostPerHour => solarOMCostPerMwPerHour * megawattMax;
+  int get _costPerHour => solarCostPerMwh * megawattMax;
+  int get _omCostPerHour => solarOMCostPerMwh * megawattMax;
 
   @override
   String type() {
@@ -188,8 +188,8 @@ class GeneratorWind implements Generator {
   GeneratorWind(this.megawattMax,
       {this.maxWind = windMaxKmh, this.minWind = windMinKmh});
 
-  int get _costPerHour => windCostPerMwPerHour * megawattMax;
-  int get _omCostPerHour => windOMCostPerMwPerHour * megawattMax;
+  int get _costPerHour => windCostPerMwh * megawattMax;
+  int get _omCostPerHour => windOMCostPerMwh * megawattMax;
 
   @override
   String type() {
@@ -228,7 +228,7 @@ class Battery {
       : chargeMWh = 0,
         totalCost = 0;
 
-  int get omCostPerHour => (capacityMWh * batteryOMCostPerMwhPerHour).round();
+  int get omCostPerHour => (capacityMWh * batteryOMCostPerMwh).round();
 
   /// Returns MWh actually discharged (positive value).
   double discharge(double neededMWh) {

@@ -1,32 +1,36 @@
 const String gitSha = 'GIT_SHA_REPLACE';
 const String buildDate = 'BUILD_DATE_REPLACE';
 
-// ── Generator operating costs ($ per MWmax per hour at 100% dispatch) ────────
-/// Carbon generator cost per MW of capacity per hour at full output
-const int carbonCostPerMwPerHour = 100;
+// ── Generator operating costs ($ per MWh) ────────────────────────────────────
+/// Carbon generator cost per MW of capacity per hour
+const int carbonCostPerMwPerHour = 35; // ~ 35 USD per MWh
 
-/// Solar fixed operating cost per MW of capacity per hour (weather-dependent output)
-const int solarCostPerMwPerHour = 10;
+/// Solar generator cost per MW of capacity per hour
+const int solarCostPerMwPerHour = 0;
 
-/// Wind fixed operating cost per MW of capacity per hour (weather-dependent output)
-const int windCostPerMwPerHour = 8;
+/// Wind generator cost per MW of capacity per hour
+const int windCostPerMwPerHour = 0;
 
-// ── Generator maintenance costs ($ per MWmax per hour, always paid) ──────────
-/// Carbon generator maintenance cost per MW per hour (paid even when idle)
-const int carbonMaintenanceCostPerMwPerHour = 20;
+// ── Generator O&M costs (operations & maintenance, $ per MWmax per hour, always paid) ─
+// values from:
+//  - https://www.irena.org/-/media/Files/IRENA/Agency/Publication/2025/Jul/IRENA_TEC_RPGC_in_2024_2025.pdf
+//  - https://docs.nrel.gov/docs/fy25osti/91775.pdf
+//  - https://pv-maps.com/en/blog/solar-om-costs-per-mw
+/// Carbon (NGCC) O&M cost per MW per hour
+const int carbonOMCostPerMwPerHour = 2; // ~ 15 USD per kW per year
 
-/// Solar panel maintenance cost per MW per hour
-const int solarMaintenanceCostPerMwPerHour = 3;
+/// Solar (photovoltaic) O&M cost per MW per hour
+const int solarOMCostPerMwPerHour = 1; // ~ 10 USD per kW per year
 
-/// Wind turbine maintenance cost per MW per hour
-const int windMaintenanceCostPerMwPerHour = 4;
+/// Wind turbine (onshore) O&M cost per MW per hour
+const int windOMCostPerMwPerHour = 4; // ~ 40 USD per kW per year
 
 // ── Battery operating cost ───────────────────────────────────────────────────
-/// Battery cost per MWh discharged (wear/degradation proxy)
-const int batteryCostPerMwhDischarged = 5;
+/// Battery cost per MWh discharged
+const int batteryCostPerMwhDischarged = 0;
 
-/// Battery maintenance cost per MWh of capacity per hour
-const int batteryMaintenanceCostPerMwhPerHour = 2;
+/// Battery O&M cost per MWh of capacity per hour
+const int batteryOMCostPerMwhPerHour = 1; // ~ 8 USD per kWh per year
 
 // ── Wind turbine operating envelope ──────────────────────────────────────────
 /// Wind speed (km/h) below which turbines produce nothing

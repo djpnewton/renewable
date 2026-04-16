@@ -123,8 +123,7 @@ class GeneratorCarbon implements Generator {
   GeneratorCarbon(this.megawattMax);
 
   int get _costPerHour => (carbonCostPerMwPerHour * megawattMax);
-  int get _maintenanceCostPerHour =>
-      carbonMaintenanceCostPerMwPerHour * megawattMax;
+  int get _omCostPerHour => carbonOMCostPerMwPerHour * megawattMax;
 
   @override
   String type() {
@@ -135,8 +134,7 @@ class GeneratorCarbon implements Generator {
   GenerationPeriod generate(WeatherPeriod wp, double percentRequired) {
     var generated = megawattMax * percentRequired / 100.0;
     var gp = GenerationPeriod(
-        (_costPerHour * percentRequired / 100).round() +
-            _maintenanceCostPerHour,
+        (_costPerHour * percentRequired / 100).round() + _omCostPerHour,
         generated,
         generated);
     _total = _total.add(gp);
@@ -158,8 +156,7 @@ class GeneratorSolar implements Generator {
   GeneratorSolar(this.megawattMax);
 
   int get _costPerHour => solarCostPerMwPerHour * megawattMax;
-  int get _maintenanceCostPerHour =>
-      solarMaintenanceCostPerMwPerHour * megawattMax;
+  int get _omCostPerHour => solarOMCostPerMwPerHour * megawattMax;
 
   @override
   String type() {
@@ -168,7 +165,7 @@ class GeneratorSolar implements Generator {
 
   @override
   GenerationPeriod generate(WeatherPeriod wp, double percentRequired) {
-    var gp = GenerationPeriod(_costPerHour + _maintenanceCostPerHour,
+    var gp = GenerationPeriod(_costPerHour + _omCostPerHour,
         megawattMax * wp.sun / 100, megawattMax * percentRequired / 100.0);
     _total = _total.add(gp);
     return gp;
@@ -192,8 +189,7 @@ class GeneratorWind implements Generator {
       {this.maxWind = windMaxKmh, this.minWind = windMinKmh});
 
   int get _costPerHour => windCostPerMwPerHour * megawattMax;
-  int get _maintenanceCostPerHour =>
-      windMaintenanceCostPerMwPerHour * megawattMax;
+  int get _omCostPerHour => windOMCostPerMwPerHour * megawattMax;
 
   @override
   String type() {
@@ -205,7 +201,7 @@ class GeneratorWind implements Generator {
     assert(minWind >= 0);
     assert(maxWind > minWind);
     var required = megawattMax * percentRequired / 100.0;
-    final totalCost = _costPerHour + _maintenanceCostPerHour;
+    final totalCost = _costPerHour + _omCostPerHour;
     var gp = GenerationPeriod(totalCost, 0, required);
     if (wp.wind <= maxWind && wp.wind >= minWind) {
       gp = GenerationPeriod(totalCost,
@@ -232,8 +228,7 @@ class Battery {
       : chargeMWh = 0,
         totalCost = 0;
 
-  int get maintenanceCostPerHour =>
-      (capacityMWh * batteryMaintenanceCostPerMwhPerHour).round();
+  int get omCostPerHour => (capacityMWh * batteryOMCostPerMwhPerHour).round();
 
   /// Returns MWh actually discharged (positive value).
   double discharge(double neededMWh) {

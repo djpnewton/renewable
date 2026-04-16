@@ -56,6 +56,7 @@ class _MyHomePageState extends State<MyHomePage> {
   var _batteries = <Battery>[];
   SimSummary? _summary;
   Weather24h? _lastWeather;
+  var _includeBaseload = false;
   var _tempData = LineChartData();
   var _sunData = LineChartData();
   var _windData = LineChartData();
@@ -209,7 +210,7 @@ class _MyHomePageState extends State<MyHomePage> {
       final batteryCostHour = _batteries.fold(0, (s, b) => s + b.totalCost) -
           batteryTotalCostBefore;
       final batteryMaintenanceHour =
-          _batteries.fold(0, (s, b) => s + b.maintenanceCostPerHour);
+          _batteries.fold(0, (s, b) => s + b.omCostPerHour);
 
       // 3. Carbon fills any remaining gap (dispatchable peaker)
       final carbonGens = _generators.whereType<GeneratorCarbon>().toList();
@@ -635,8 +636,7 @@ class _MyHomePageState extends State<MyHomePage> {
       }
       final batteryCostHour =
           bats.fold(0, (s, b) => s + b.totalCost) - costBefore;
-      final batteryMaintHour =
-          bats.fold(0, (s, b) => s + b.maintenanceCostPerHour);
+      final batteryMaintHour = bats.fold(0, (s, b) => s + b.omCostPerHour);
       // 3. Carbon
       final carbonGens = gens.whereType<GeneratorCarbon>().toList();
       final totalCarbonCap = carbonGens.fold(0, (s, g) => s + g.megawattMax);
@@ -906,6 +906,23 @@ class _MyHomePageState extends State<MyHomePage> {
     final totalBatPower = finalBats.fold(0.0, (sum, b) => sum + b.maxPowerMW);
     final consolidatedBats =
         finalBats.isEmpty ? <Battery>[] : [Battery(totalBatCap, totalBatPower)];
+
+    // ── Baseload constraint ──────────────────────────────────────────────────
+    // When enabled, ensure carbon capacity ≥ peak demand so the fleet can
+    // cover a full day with no wind or solar output.
+    if (_includeBaseload) {
+      final carbonIdx =
+          consolidatedGens.indexWhere((g) => g is GeneratorCarbon);
+      final requiredMW = peakDemand.round().clamp(1, upperMW);
+      if (carbonIdx >= 0) {
+        final existing = consolidatedGens[carbonIdx];
+        if (existing.megawattMax < requiredMW) {
+          consolidatedGens[carbonIdx] = GeneratorCarbon(requiredMW);
+        }
+      } else {
+        consolidatedGens.add(GeneratorCarbon(requiredMW));
+      }
+    }
 
     setState(() {
       _generators = consolidatedGens;
@@ -1249,23 +1266,23 @@ class _MyHomePageState extends State<MyHomePage> {
                 _assumptionSection('Carbon Generators', [
                   _assumptionRow('Operating cost',
                       '\$$carbonCostPerMwPerHour / MW / hr at full output'),
-                  _assumptionRow('Maintenance cost',
-                      '\$$carbonMaintenanceCostPerMwPerHour / MW / hr (always)'),
+                  _assumptionRow('O&M cost',
+                      '\$$carbonOMCostPerMwPerHour / MW / hr (always)'),
                   _assumptionRow('Dispatch', 'On-demand to fill gap'),
                 ]),
                 _assumptionSection('Solar Generators', [
                   _assumptionRow('Operating cost',
                       '\$$solarCostPerMwPerHour / MW / hr (fixed)'),
-                  _assumptionRow('Maintenance cost',
-                      '\$$solarMaintenanceCostPerMwPerHour / MW / hr (always)'),
+                  _assumptionRow('O&M cost',
+                      '\$$solarOMCostPerMwPerHour / MW / hr (always)'),
                   _assumptionRow('Output', 'Scales with sun % (0–100)'),
                   _assumptionRow('Dispatch', 'Always at full sun capacity'),
                 ]),
                 _assumptionSection('Wind Generators', [
                   _assumptionRow('Operating cost',
                       '\$$windCostPerMwPerHour / MW / hr (fixed)'),
-                  _assumptionRow('Maintenance cost',
-                      '\$$windMaintenanceCostPerMwPerHour / MW / hr (always)'),
+                  _assumptionRow('O&M cost',
+                      '\$$windOMCostPerMwPerHour / MW / hr (always)'),
                   _assumptionRow(
                       'Min wind', '$windMinKmh km/h (no output below)'),
                   _assumptionRow(
@@ -1277,8 +1294,8 @@ class _MyHomePageState extends State<MyHomePage> {
                 _assumptionSection('Battery Storage', [
                   _assumptionRow('Discharge cost',
                       '\$$batteryCostPerMwhDischarged / MWh discharged'),
-                  _assumptionRow('Maintenance cost',
-                      '\$$batteryMaintenanceCostPerMwhPerHour / MWh capacity / hr'),
+                  _assumptionRow('O&M cost',
+                      '\$$batteryOMCostPerMwhPerHour / MWh capacity / hr'),
                   _assumptionRow('Max power', '50% of capacity (MWh → MW)'),
                   _assumptionRow('Charge', 'Absorbs surplus renewable first'),
                   _assumptionRow(
@@ -1386,6 +1403,32 @@ class _MyHomePageState extends State<MyHomePage> {
                               ),
                             ),
                           ),
+                        SizedBox(
+                          width: 240,
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: Checkbox(
+                                  value: _includeBaseload,
+                                  onChanged: (v) =>
+                                      setState(() => _includeBaseload = v!),
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              const Expanded(
+                                child: Text(
+                                  'Include baseload for 0 wind/solar days',
+                                  style: TextStyle(fontSize: 11),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 4),
                           child: Text(

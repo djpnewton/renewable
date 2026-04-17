@@ -30,7 +30,7 @@ jobs:
         with:
           flutter-version: '3.41.x'
       - run: flutter pub get
-      #- run: flutter test
+      - run: flutter test test/optimizer_test.dart
       - run: dart format --set-exit-if-changed lib
       - run: flutter analyze
       - uses: bluefireteam/flutter-gh-pages@v9

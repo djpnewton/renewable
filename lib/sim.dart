@@ -85,6 +85,21 @@ class Weather24h {
       periods.add(WeatherPeriod.sim(i, tempHigh, tempLow, sunAvg, windAvg));
     }
   }
+
+  /// Private bare constructor – does NOT initialise the late fields.
+  Weather24h._();
+
+  /// Creates a deterministic 24-hour weather period for testing/inspection.
+  /// Every hour has the same [temp] (°C), [sun] (0–100 %), and [wind] (km/h).
+  factory Weather24h.fixed({int temp = 20, int sun = 0, int wind = 0}) {
+    final w = Weather24h._();
+    w.tempHigh = temp;
+    w.tempLow = temp;
+    w.sunAvg = sun;
+    w.windAvg = wind;
+    w.periods = List.generate(24, (h) => WeatherPeriod(h, temp, sun, wind));
+    return w;
+  }
 }
 
 class GenerationPeriod {

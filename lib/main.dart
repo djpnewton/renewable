@@ -59,6 +59,8 @@ class _MyHomePageState extends State<MyHomePage> {
   Weather24h? _lastWeather;
   var _includeBaseload = false;
   var _optimizeMode = OptimizeMode.operational;
+  var _sunEnabled = true;
+  var _windEnabled = true;
   var _tempData = LineChartData();
   var _sunData = LineChartData();
   var _windData = LineChartData();
@@ -148,9 +150,15 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _chart(String title, LineChartData data,
-      {List<(String, Color)> legend = const []}) {
+      {List<(String, Color)> legend = const [], Widget? action}) {
     return Column(children: [
-      _chartTitle(title, legend),
+      SizedBox(
+        width: 400,
+        child: Row(children: [
+          Expanded(child: _chartTitle(title, legend)),
+          if (action != null) action,
+        ]),
+      ),
       SizedBox(
           width: 400,
           height: 200,
@@ -197,7 +205,13 @@ class _MyHomePageState extends State<MyHomePage> {
     var totalBattery = 0.0;
     var totalBatteryCharged = 0.0;
     var totalCostSum = 0;
-    for (var wp in w24.periods) {
+    for (var wpOrig in w24.periods) {
+      final wp = WeatherPeriod(
+        wpOrig.hour,
+        wpOrig.temp,
+        _sunEnabled ? wpOrig.sun : 0,
+        _windEnabled ? wpOrig.wind : 0,
+      );
       printWeather(wp, _city);
       temp.add(FlSpot(wp.hour.toDouble(), wp.temp.toDouble()));
       sun.add(FlSpot(wp.hour.toDouble(), wp.sun.toDouble()));
@@ -1125,8 +1139,35 @@ class _MyHomePageState extends State<MyHomePage> {
                 children: [
                   Column(mainAxisAlignment: MainAxisAlignment.start, children: [
                     _chart('Temp (°C)', _tempData),
-                    _chart('Sun (%)', _sunData),
-                    _chart('Wind (km/h)', _windData),
+                    _chart('Sun (%)', _sunData,
+                        action: IconButton(
+                          icon: Icon(Icons.wb_sunny,
+                              size: 18,
+                              color: _sunEnabled ? Colors.amber : Colors.grey),
+                          tooltip: _sunEnabled ? 'Disable sun' : 'Enable sun',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () {
+                            setState(() => _sunEnabled = !_sunEnabled);
+                            if (_lastWeather != null) _runSim(_lastWeather!);
+                          },
+                        )),
+                    _chart('Wind (km/h)', _windData,
+                        action: IconButton(
+                          icon: Icon(Icons.air,
+                              size: 18,
+                              color: _windEnabled
+                                  ? Colors.lightBlue
+                                  : Colors.grey),
+                          tooltip:
+                              _windEnabled ? 'Disable wind' : 'Enable wind',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () {
+                            setState(() => _windEnabled = !_windEnabled);
+                            if (_lastWeather != null) _runSim(_lastWeather!);
+                          },
+                        )),
                   ]),
                   Column(mainAxisAlignment: MainAxisAlignment.start, children: [
                     _chart('Energy (MW)', _energyData, legend: [
